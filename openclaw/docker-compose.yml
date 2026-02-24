@@ -1,0 +1,53 @@
+# docker-compose.yml — OpenClaw gateway
+# Security: gateway bound to Tailscale IP only; workspace scoped to single folder
+#
+# BEFORE FIRST USE: replace YOUR_TAILSCALE_IP with output of: tailscale ip -4
+#
+# DO NOT change the ports: binding to 0.0.0.0 — this would expose the gateway
+#   to your LAN and potentially the internet.
+# DO NOT add volume mounts for ~/.ssh, ~/, /etc, or any credential-containing paths.
+# DO NOT override the user: directive — OpenClaw must run as non-root (node/uid 1000).
+# See README.md for full security notes.
+
+services:
+  openclaw-gateway:
+    image: openclaw/openclaw:latest
+    container_name: openclaw-gateway
+    restart: unless-stopped
+    ports:
+      # IMPORTANT: bind to Tailscale IP only — not 0.0.0.0
+      # Replace YOUR_TAILSCALE_IP with output of: tailscale ip -4
+      - "YOUR_TAILSCALE_IP:18789:18789"
+    volumes:
+      # OpenClaw config and memory — internal use only
+      - openclaw-config:/home/node/.openclaw
+      # Workspace — the ONLY host folder the agent can read/write
+      # Do NOT replace ~/openclaw-workspace with ~/ or any broader path
+      - ~/openclaw-workspace:/home/node/workspace:rw
+    environment:
+      - NODE_ENV=production
+      - OPENAI_API_BASE=http://nim:8000/v1
+      - OPENAI_API_KEY=dummy
+    networks:
+      - nim_net
+    # Runs as non-root node user (uid 1000) — do not override with user: root
+
+  openclaw-cli:
+    image: openclaw/openclaw:latest
+    profiles:
+      - cli
+    volumes:
+      - openclaw-config:/home/node/.openclaw
+    networks:
+      - nim_net
+    entrypoint: ["node", "dist/index.js"]
+
+volumes:
+  openclaw-config:
+
+networks:
+  nim_net:
+    external: true
+    name: qwen3-coder-next_nim_net
+    # This network is created by qwen3-coder-next/docker-compose.yml
+    # vLLM (qwen3-coder-next) must be started before OpenClaw

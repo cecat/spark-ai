@@ -1,0 +1,40 @@
+# docker-compose.yml — vLLM serving Qwen3-Coder-Next-FP8
+# Security: model API is Docker-internal only, never published to host
+#
+# DO NOT add a ports: section to this service.
+# DO NOT change the volume mount from ~/.cache/huggingface to a broader path.
+# See README.md for full security notes.
+
+services:
+  nim:
+    image: vllm-node
+    container_name: vllm-qwen3-coder-next
+    restart: unless-stopped
+    runtime: nvidia
+    shm_size: "32g"
+    ipc: host
+    environment:
+      - HF_TOKEN           # pass-through only — set in shell, never hardcode
+      - HF_HUB_OFFLINE=0   # change to 1 after first successful model download
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    # NO ports: section — model API must not be published to the host
+    networks:
+      - nim_net
+    command: >
+      vllm serve Qwen/Qwen3-Coder-Next-FP8
+        --host 0.0.0.0 --port 8000
+        --gpu-memory-utilization 0.8
+        --max-model-len 131072
+        --load-format fastsafetensors
+        --attention-backend flashinfer
+        --enable-prefix-caching
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_coder
+        --kv-cache-dtype fp8
+
+networks:
+  nim_net:
+    driver: bridge
+    # Lateral movement to LAN/Tailscale is blocked via host iptables rules.
+    # See README.md "Block container lateral movement" section.

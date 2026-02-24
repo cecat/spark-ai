@@ -1,28 +1,31 @@
 # OpenClaw on a NVIDIA DGX Spark
 
-This config runs **Qwen3-Coder-Next-FP8** via community vLLM on a DGX Spark, secured so
-the model API is reachable only from other containers on the same Docker network. OpenClaw
-is reachable only from hosts on the same Tailscale network as the Spark.
+This repo runs **Qwen3-Coder-Next-FP8** via community vLLM and **OpenClaw** on a DGX
+Spark. The model API is reachable only from other containers on the same Docker network.
+OpenClaw is reachable only from hosts on the same Tailscale network as the Spark.
 
 Use any of this at your own risk.
 
 ---
 
-## Directory layout
+## Repository layout
 
 ```
 ~/code/
-├── spark-vllm-docker/     # eugr community vLLM build repo
-├── qwen3-coder-next/      # vLLM docker-compose.yml lives here
-└── openclaw/              # OpenClaw docker-compose.yml lives here
+├── spark-vllm-docker/           # eugr community vLLM build repo (cloned separately)
+└── spark-ai/                    # this repo
+    ├── README.md
+    ├── .gitignore
+    ├── qwen3-coder-next/
+    │   └── docker-compose.yml   # vLLM inference service
+    └── openclaw/
+        └── docker-compose.yml   # OpenClaw gateway service
 
-~/.cache/huggingface/      # model weights (~46GB) — not in ~/code
+~/.cache/huggingface/            # model weights (~46GB) — not in this repo
+~/openclaw-workspace/            # folder OpenClaw is allowed to read/write
 ```
 
-`spark-vllm-docker`, `qwen3-coder-next`, and `openclaw` are independent directories
-connected only at runtime through a shared Docker network. The model cache lives in
-`~/.cache/huggingface` by convention — it is large binary data, not code, and should
-not be inside `~/code`.
+Model weights are large binary data and must not be committed to this repo.
 
 ---
 
@@ -31,7 +34,7 @@ not be inside `~/code`.
 ```
 [Tailscale]
     |
-    v  (port 18789, Tailscale IP only)
+    v  (port 18789, Tailscale IP only — not 0.0.0.0)
 [OpenClaw container]
     |
     | http://nim:8000/v1   (Docker-internal only, no host port exposed)
@@ -52,18 +55,21 @@ not be inside `~/code`.
 
 - Do not add a `ports:` section to the vLLM service. Publishing port 8000 will expose
   the model API to the host, LAN, and Tailscale network.
-- The HuggingFace token is a pass-through only. It must never be hardcoded into
-  `docker-compose.yml` or committed to version control.
+- The HuggingFace token must never be passed as a command-line argument, hardcoded into
+  any file, or committed to version control. It will appear in `ps aux`. Always use
+  `read -s` to set it in your shell environment only.
 - The `~/.cache/huggingface` volume mount persists model weights. Do not replace it with
   a broader mount such as `~/` or `/home`.
 - Do not mount `~/.ssh`, `/etc`, or any path containing credentials into any container.
-- Your home directory and `~/.docker` should not be world-readable. Tighten permissions
-  if unsure:
+- OpenClaw runs as non-root (`node` user, uid 1000). Do not override this.
+- Your home directory and `~/.docker` should not be world-readable:
   ```bash
   chmod 700 ~ ~/.docker
   ```
-- After the model is downloaded, set `HF_HUB_OFFLINE=1` in `docker-compose.yml` to
-  block unnecessary outbound connections from the model container.
+- After the model is downloaded, set `HF_HUB_OFFLINE=1` in
+  `qwen3-coder-next/docker-compose.yml` to block unnecessary outbound connections.
+- Rotate your HuggingFace token immediately if it ever appears in `ps aux` or shell
+  history. Rotate at: https://huggingface.co/settings/tokens
 
 ---
 
@@ -83,8 +89,14 @@ docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi
 
 ### 3) HuggingFace account + token
 - Create a free account at https://huggingface.co
-- Generate a read-only access token at https://huggingface.co/settings/tokens
+- Generate a **read-only** access token at https://huggingface.co/settings/tokens
 - The token is passed at runtime only, never stored in this repo
+
+### 4) Tailscale installed and active
+```bash
+tailscale ip -4
+# Note this IP — you must set it in openclaw/docker-compose.yml before first use
+```
 
 ---
 
@@ -111,104 +123,126 @@ docker images | grep vllm-node
 
 ---
 
-## docker-compose.yml
+## One-time setup: create the OpenClaw workspace folder
 
-```yaml
-services:
-  nim:
-    image: vllm-node
-    container_name: vllm-qwen3-coder-next
-    restart: unless-stopped
-    runtime: nvidia
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
-    shm_size: "32g"
-    ipc: host
-    environment:
-      - HF_TOKEN           # pass-through only; set in shell before compose up
-      - HF_HUB_OFFLINE=0   # change to 1 after first successful model download
-    volumes:
-      - ~/.cache/huggingface:/root/.cache/huggingface
-    # NO ports: section — model API must not be published to the host
-    networks:
-      - nim_net
-    command: >
-      bash -c "vllm serve Qwen/Qwen3-Coder-Next-FP8
-        --host 0.0.0.0
-        --port 8000
-        --gpu-memory-utilization 0.8
-        --max-model-len 131072
-        --load-format fastsafetensors
-        --attention-backend flashinfer
-        --enable-prefix-caching
-        --enable-auto-tool-choice
-        --tool-call-parser qwen3_coder
-        --kv-cache-dtype fp8"
+OpenClaw is only permitted to read and write this single folder. Nothing outside it is
+mounted into the container.
 
-  # OpenClaw — add later; placeholder shown
-  # openclaw:
-  #   ...
-  #   environment:
-  #     - OPENAI_API_BASE=http://nim:8000/v1
-  #     - OPENAI_API_KEY=dummy
-  #   networks:
-  #     - nim_net
-
-networks:
-  nim_net:
-    driver: bridge
+```bash
+mkdir -p ~/openclaw-workspace
+chmod 755 ~/openclaw-workspace
 ```
 
-> **Context length note:** `--max-model-len 131072` (128K) is the proven-stable value for
-> a single Spark. The model supports 256K but the larger KV cache may cause OOM. Increase
-> to 262144 only after confirming stability at 131072.
+> Do not use your home directory or any path that contains `~/.ssh` or credentials.
+
+---
+
+## One-time setup: set your Tailscale IP in openclaw/docker-compose.yml
+
+```bash
+# Get your Tailscale IP
+tailscale ip -4
+
+# Edit and replace YOUR_TAILSCALE_IP with the output above
+nano ~/code/spark-ai/openclaw/docker-compose.yml
+```
+
+---
+
+## qwen3-coder-next/docker-compose.yml
+
+See the file at `qwen3-coder-next/docker-compose.yml`.
+
+**Do not edit** except to change `HF_HUB_OFFLINE` from `0` to `1` after the model is
+downloaded. Changing anything else — particularly adding a `ports:` section or broadening
+the volume mount — breaks the security model.
+
+Key parameters:
+- `--max-model-len 131072` — 128K context, proven-stable on a single Spark. The model
+  supports 256K but the larger KV cache may cause OOM. Increase to 262144 only after
+  confirming stability at 128K.
+- `--gpu-memory-utilization 0.8` — reduce to `0.7` if you see OOM errors on startup.
+- `HF_HUB_OFFLINE=0` — change to `1` once the model is downloaded to block outbound
+  connections from the vLLM container.
+
+---
+
+## openclaw/docker-compose.yml
+
+See the file at `openclaw/docker-compose.yml`.
+
+**Before first use** replace `YOUR_TAILSCALE_IP` with your Spark's Tailscale IP.
+
+Key points:
+- Gateway port 18789 is bound to your Tailscale IP only — never `0.0.0.0`.
+- `~/openclaw-workspace` is the only host path mounted into the container.
+- OpenClaw connects to vLLM via `http://nim:8000/v1` on the shared Docker network.
+- vLLM must be started before OpenClaw so the shared network exists.
 
 ---
 
 ## First run: download the model
 
-The model is ~46GB. Pre-download before starting the stack so you can monitor progress:
+The model is ~46GB. Pre-download before starting the stack so you can monitor progress.
+
+**WARNING:** Do not pass the token as a Python `-c` argument — it will appear in `ps aux`.
+Use the script approach below.
 
 ```bash
 # Install huggingface_hub if needed
 pip install huggingface_hub --break-system-packages
 
+# Set token securely — read -s does not echo and does not save to shell history
 read -s -p "HuggingFace token: " HF_TOKEN; echo
-python3 -c "
+
+# Write a temp script so the token stays in the environment, not in ps aux
+cat > /tmp/hf_download.py << 'EOF'
+import os, sys
 from huggingface_hub import snapshot_download
-snapshot_download(
-    repo_id='Qwen/Qwen3-Coder-Next-FP8',
-    token='$HF_TOKEN'
-)
-"
+token = os.environ.get("HF_TOKEN")
+if not token:
+    print("ERROR: HF_TOKEN not set"); sys.exit(1)
+snapshot_download(repo_id="Qwen/Qwen3-Coder-Next-FP8", token=token)
+print("Download complete.")
+EOF
+
+HF_TOKEN="$HF_TOKEN" python3 /tmp/hf_download.py
 unset HF_TOKEN
+rm /tmp/hf_download.py
 ```
 
-The download goes to `~/.cache/huggingface/\` automatically. Progress is shown per file.
-Expect 20-60 minutes depending on your connection speed.
+The download is **resumable** — if interrupted, re-run and it continues from where it
+left off. To run in the background and survive SSH disconnections:
+
+```bash
+read -s -p "HuggingFace token: " HF_TOKEN; echo
+cat > /tmp/hf_download.py << 'EOF'
+import os, sys
+from huggingface_hub import snapshot_download
+token = os.environ.get("HF_TOKEN")
+if not token:
+    print("ERROR: HF_TOKEN not set"); sys.exit(1)
+snapshot_download(repo_id="Qwen/Qwen3-Coder-Next-FP8", token=token)
+print("Download complete.")
+EOF
+
+nohup bash -c "HF_TOKEN='$HF_TOKEN' python3 /tmp/hf_download.py" \
+  > ~/download.log 2>&1 &
+echo "PID: $!"
+unset HF_TOKEN
+
+tail -f ~/download.log
+```
 
 ---
 
 ## Start the stack
 
-```bash
-cd ~/code/qwen3-coder-next
+### Step 1: Start vLLM
 
-# Model is cached — no token needed at runtime
-# WARNING: Never pass HF_TOKEN on the command line or hardcode it anywhere.
-# It will appear in `ps aux` output and shell history. If you accidentally
-# exposed your token, rotate it immediately:
-# https://huggingface.co/settings/tokens
+```bash
+cd ~/code/spark-ai/qwen3-coder-next
 docker compose up -d
-
-docker compose ps
-```
-
-### Watch logs until ready
-```bash
 docker logs -f vllm-qwen3-coder-next
 ```
 
@@ -221,45 +255,161 @@ INFO:     Uvicorn running on http://0.0.0.0:8000
 First start takes 3-5 minutes while vLLM compiles Triton kernels. Subsequent starts
 are fast once kernels are cached.
 
+### Step 2: Start OpenClaw
+
+```bash
+cd ~/code/spark-ai/openclaw
+docker compose up -d openclaw-gateway
+docker compose logs -f openclaw-gateway
+```
+
+### Step 3: Complete OpenClaw onboarding
+
+```bash
+cd ~/code/spark-ai/openclaw
+docker compose run --rm openclaw-cli onboard --no-install-daemon
+```
+
+During onboarding:
+1. **AI Provider** — select "OpenAI-compatible", base URL `http://nim:8000/v1`, API key `dummy`
+2. **Gateway mode** — choose `local`
+3. **Messaging channel** — Telegram recommended (see Step 4)
+4. **Agent sandboxing** — enable when prompted
+5. **Shell tool** — **leave disabled**. This is the most important security setting.
+   A compromised agent with shell access could attempt to SSH out of the container.
+   Enable only if you have a specific understood need for it.
+
+### Step 4: Connect Telegram
+
+```bash
+# Get a bot token from @BotFather on Telegram, then:
+cd ~/code/spark-ai/openclaw
+docker compose run --rm openclaw-cli channels add \
+  --channel telegram \
+  --token YOUR_TELEGRAM_BOT_TOKEN
+
+docker compose up -d openclaw-gateway
+
+# Approve the pairing code OpenClaw sends to your Telegram
+docker compose run --rm openclaw-cli pairing approve telegram YOUR_PAIRING_CODE
+```
+
+Verify `gateway.mode` is `local` and the channel is locked to your account only.
+
+---
+
+## Google and Slack credentials
+
+**Google account:**
+- Create a dedicated Google account solely for the OpenClaw agent — do not use your
+  personal account.
+- Grant this account view-only access to the three Google Sheets.
+- The account will need Drive write scope to create Google Docs. Ensure it has no access
+  to your personal Google Drive.
+- OAuth tokens are stored in the `openclaw-config` Docker volume, not on the host
+  filesystem.
+
+**Slack:**
+- Create a dedicated Slack bot with minimum scopes: `chat:write`, `files:write`, and
+  `channels:read` for your target channel only. Do not use a broad user OAuth token.
+- Restrict the bot to a single channel.
+
+---
+
+## Block container lateral movement (iptables)
+
+Run on the **Spark host** after both containers are running. Prevents a compromised agent
+from reaching other hosts on your LAN, Tailscale network, or SSHing out to any host.
+
+```bash
+# Get the Docker network subnet
+docker network inspect qwen3-coder-next_nim_net | grep Subnet
+
+DOCKER_SUBNET="172.18.0.0/16"   # adjust to match output above
+LAN_SUBNET="YOUR_LAN_SUBNET"    # e.g. 10.0.4.0/22
+TAILSCALE_CGNAT="100.64.0.0/10"
+
+# Block container → LAN
+sudo iptables -I DOCKER-USER -s $DOCKER_SUBNET -d $LAN_SUBNET -j DROP
+
+# Block container → Tailscale peers
+sudo iptables -I DOCKER-USER -s $DOCKER_SUBNET -d $TAILSCALE_CGNAT -j DROP
+
+# Block container outbound SSH to any host
+sudo iptables -I DOCKER-USER -s $DOCKER_SUBNET -p tcp --dport 22 -j DROP
+
+# Verify all three rules are present
+sudo iptables -L DOCKER-USER -n -v
+```
+
+Make persistent across reboots:
+
+```bash
+sudo apt install iptables-persistent -y
+sudo netfilter-persistent save
+```
+
+---
+
+## Harden SSH on your MacBook
+
+Even with iptables blocking the containers, the Spark host itself has a passwordless SSH
+key to your MacBook. Add a `from=` restriction on the MacBook side as a backstop.
+
+On your **MacBook**, edit `~/.ssh/authorized_keys` and prefix the Spark's key entry:
+
+```
+from="YOUR_TAILSCALE_IP",no-agent-forwarding,no-X11-forwarding,no-port-forwarding ssh-ed25519 AAAA... spark-key
+```
+
 ---
 
 ## Security verification
 
-Run these checks after every fresh deployment.
+Run after every fresh deployment.
 
 ### A) Host must NOT be listening on port 8000
 ```bash
 ss -ltnp | grep :8000 || echo "No host listener on 8000 (expected)"
-```
-
-Direct access from the host must fail:
-```bash
 curl -s http://localhost:8000/v1/models || echo "Host cannot reach vLLM (expected)"
 ```
 
-### B) Model API reachable only from inside the Docker network
+### B) OpenClaw bound to Tailscale IP only
 ```bash
-docker network ls | grep nim_net
-# Note the full network name, e.g. qwen3-coder-next_nim_net
-
-NET="<PASTE_NETWORK_NAME_HERE>"
-docker run --rm --network "$NET" curlimages/curl:latest \
-  -s http://nim:8000/v1/models | python3 -m json.tool
+ss -tlnp | grep 18789
+# Must show YOUR_TAILSCALE_IP:18789 — NOT 0.0.0.0:18789
 ```
 
-Expected: JSON response listing `Qwen/Qwen3-Coder-Next-FP8`.
-
-### C) Quick generation test
+### C) Model API reachable only from inside Docker network
 ```bash
-NET="<PASTE_NETWORK_NAME_HERE>"
+NET="qwen3-coder-next_nim_net"
 docker run --rm --network "$NET" curlimages/curl:latest \
-  -s -X POST http://nim:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "Qwen/Qwen3-Coder-Next-FP8",
-    "messages": [{"role": "user", "content": "Say hello in one sentence."}],
-    "max_tokens": 32
-  }' | python3 -m json.tool
+  -s http://nim:8000/v1/models | python3 -m json.tool
+# Expected: JSON listing Qwen/Qwen3-Coder-Next-FP8
+```
+
+### D) Container cannot reach LAN, Tailscale peers, or SSH out
+```bash
+docker compose exec openclaw-gateway ping -c 2 YOUR_MAC_TAILSCALE_IP
+# Expected: 100% packet loss
+
+docker compose exec openclaw-gateway ping -c 2 10.0.4.1
+# Expected: 100% packet loss
+
+docker compose exec openclaw-gateway timeout 5 bash -c \
+  "echo > /dev/tcp/github.com/22" 2>&1 || echo "Port 22 outbound blocked (expected)"
+```
+
+### E) Container CAN reach the internet
+```bash
+docker compose exec openclaw-gateway curl -s https://api.anthropic.com --max-time 5
+# Expected: any response (even 401 — network works)
+```
+
+### F) No ~/.ssh mount in container
+```bash
+docker compose exec openclaw-gateway ls /home/node/.ssh 2>&1
+# Expected: No such file or directory
 ```
 
 ---
@@ -277,9 +427,13 @@ docker run --rm --network "$NET" curlimages/curl:latest \
 ## Stop / restart
 
 ```bash
-cd ~/code/qwen3-coder-next
-docker compose down
-docker compose up -d   # no token needed once model is cached
+# Stop OpenClaw first, then vLLM
+cd ~/code/spark-ai/openclaw && docker compose down
+cd ~/code/spark-ai/qwen3-coder-next && docker compose down
+
+# Start vLLM first, then OpenClaw
+cd ~/code/spark-ai/qwen3-coder-next && docker compose up -d
+cd ~/code/spark-ai/openclaw && docker compose up -d
 ```
 
 ---
@@ -287,13 +441,13 @@ docker compose up -d   # no token needed once model is cached
 ## Updating
 
 ```bash
-cd ~/code/spark-vllm-docker
-git pull
-./build-and-copy.sh
+# Update vLLM image
+cd ~/code/spark-vllm-docker && git pull && ./build-and-copy.sh
 
-cd ~/code/qwen3-coder-next
-docker compose down
-docker compose up -d
+# Restart stack (vLLM first, then OpenClaw)
+cd ~/code/spark-ai/openclaw && docker compose down
+cd ~/code/spark-ai/qwen3-coder-next && docker compose down && docker compose up -d
+cd ~/code/spark-ai/openclaw && docker compose up -d
 ```
 
 Model weights in `~/.cache/huggingface/` are unaffected by image updates.
@@ -303,52 +457,38 @@ Model weights in `~/.cache/huggingface/` are unaffected by image updates.
 ## Troubleshooting
 
 ```bash
-# Compose config check
-docker compose config
-
 # Container status
 docker compose ps && docker ps -a
 
-# Recent logs
+# vLLM logs
 docker logs vllm-qwen3-coder-next --tail 200
+
+# OpenClaw logs
+docker logs openclaw-gateway --tail 200
 
 # GPU access check
 docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi
 
-# Auth/download errors
-docker logs vllm-qwen3-coder-next 2>&1 | grep -i "error\|auth\|token"
-
-# Confirm model is fully downloaded (~46GB)
+# Confirm model fully downloaded (~46GB)
 du -sh ~/.cache/huggingface/hub/models--Qwen--Qwen3-Coder-Next-FP8/
 ```
 
 **`CUDA error` or `SM version not supported`:**
-The `vllm-node` image must be built from `eugr/spark-vllm-docker`, not pulled from
-NVIDIA NGC. Rebuild:
 ```bash
 cd ~/code/spark-vllm-docker && git pull && ./build-and-copy.sh
 ```
 
 **OOM during model load:**
-Reduce `--gpu-memory-utilization` to `0.7` and restart.
+Reduce `--gpu-memory-utilization` to `0.7` in `qwen3-coder-next/docker-compose.yml`.
 
 **Slow first start:**
 Normal — vLLM compiles Triton kernels on first run. Subsequent starts are fast.
 
-**Model redownloads on every start:**
-Check that `~/.cache/huggingface` is correctly mounted as a volume in `docker-compose.yml`.
-
----
-
-## Adding OpenClaw
-
-When adding OpenClaw as a second service, point it at the model server via the
-Docker-internal hostname:
-
-```yaml
-environment:
-  - OPENAI_API_BASE=http://nim:8000/v1
-  - OPENAI_API_KEY=dummy
+**OpenClaw cannot reach vLLM:**
+vLLM must be started first. Check the network exists:
+```bash
+docker network ls | grep nim_net
 ```
 
-Keep `HF_TOKEN` out of the OpenClaw container entirely.
+**Model redownloads on every start:**
+Check `~/.cache/huggingface` is correctly mounted in `qwen3-coder-next/docker-compose.yml`.
