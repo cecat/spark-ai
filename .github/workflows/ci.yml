@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ------------------------------------------------------------------
+  # Structural checks — run on any runner, no containers required
+  # ------------------------------------------------------------------
+  structural:
+    name: Structural checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate qwen3-coder-next compose syntax
+        env:
+          HF_HUB_OFFLINE: "0"
+        run: docker compose -f qwen3-coder-next/docker-compose.yml config > /dev/null
+
+      - name: Validate openclaw compose syntax
+        env:
+          TAILSCALE_IP: "localhost"
+          OPENCLAW_WORKSPACE: "/tmp/workspace"
+        run: docker compose -f openclaw/docker-compose.yml config > /dev/null
+
+      - name: Check no .env files committed
+        run: |
+          found=$(git ls-files '*.env' '.env*' '*/.env' '*/.env.*' | grep -v '.env.example' || true)
+          if [ -n "$found" ]; then
+            echo "::error::Secret .env files are committed: $found"
+            exit 1
+          fi
+
+  # ------------------------------------------------------------------
+  # Live tests — run on the Spark (self-hosted runner)
+  # ------------------------------------------------------------------
+  live:
+    name: Live tests (Spark)
+    runs-on: self-hosted
+    if: github.event_name == 'push'
+    needs: structural
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run security tests
+        run: python3 tests/test_security.py -v
+
+      - name: Run vLLM smoke tests
+        run: python3 tests/test_vllm.py -v
