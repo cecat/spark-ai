@@ -15,11 +15,16 @@ Use any of this at your own risk.
 ├── spark-vllm-docker/           # eugr community vLLM build repo (cloned separately)
 └── spark-ai/                    # this repo
     ├── README.md
+    ├── PLAN.md
     ├── .gitignore
     ├── qwen3-coder-next/
-    │   └── docker-compose.yml   # vLLM inference service
+    │   ├── docker-compose.yml   # vLLM inference service
+    │   ├── .env.example         # committed — shows required variables
+    │   └── .env                 # NOT committed — your actual values
     └── openclaw/
-        └── docker-compose.yml   # OpenClaw gateway service
+        ├── docker-compose.yml   # OpenClaw gateway service
+        ├── .env.example         # committed — shows required variables
+        └── .env                 # NOT committed — your actual values
 
 ~/.cache/huggingface/            # model weights (~46GB) — not in this repo
 ~/openclaw-workspace/            # folder OpenClaw is allowed to read/write
@@ -67,7 +72,7 @@ Model weights are large binary data and must not be committed to this repo.
   chmod 700 ~ ~/.docker
   ```
 - After the model is downloaded, set `HF_HUB_OFFLINE=1` in
-  `qwen3-coder-next/docker-compose.yml` to block unnecessary outbound connections.
+  `qwen3-coder-next/.env` to block unnecessary outbound connections from the vLLM container.
 - Rotate your HuggingFace token immediately if it ever appears in `ps aux` or shell
   history. Rotate at: https://huggingface.co/settings/tokens
 
@@ -125,57 +130,80 @@ docker images | grep vllm-node
 
 ## One-time setup: create the OpenClaw workspace folder
 
-OpenClaw is only permitted to read and write this single folder. Nothing outside it is
-mounted into the container.
+The volume mount in `openclaw/docker-compose.yml` gives the container access to exactly
+one folder on the Spark host — nothing else. Do not point this at your home directory
+or any path containing credentials.
 
 ```bash
 mkdir -p ~/openclaw-workspace
-chmod 755 ~/openclaw-workspace
 ```
-
-> Do not use your home directory or any path that contains `~/.ssh` or credentials.
 
 ---
 
-## One-time setup: set your Tailscale IP in openclaw/docker-compose.yml
+## One-time setup: create your .env files
 
+Each compose directory has a `.env.example` showing the required variables. Copy and
+fill them in — these files are never committed to git.
+
+**`qwen3-coder-next/.env`:**
 ```bash
-# Get your Tailscale IP
-tailscale ip -4
+cp ~/code/spark-ai/qwen3-coder-next/.env.example ~/code/spark-ai/qwen3-coder-next/.env
+# Edit and set:
+#   HF_HUB_OFFLINE=0   (flip to 1 after model is downloaded)
+```
 
-# Edit and replace YOUR_TAILSCALE_IP with the output above
-nano ~/code/spark-ai/openclaw/docker-compose.yml
+**`openclaw/.env`:**
+```bash
+cp ~/code/spark-ai/openclaw/.env.example ~/code/spark-ai/openclaw/.env
+# Edit and set:
+#   TAILSCALE_IP=       output of: tailscale ip -4
+#   OPENCLAW_WORKSPACE= full path, e.g. /home/catlett/openclaw-workspace
+```
+
+Verify your Tailscale IP with:
+```bash
+tailscale ip -4
 ```
 
 ---
 
 ## qwen3-coder-next/docker-compose.yml
 
-See the file at `qwen3-coder-next/docker-compose.yml`.
+See the file at `qwen3-coder-next/docker-compose.yml`. Machine-specific values are in
+`qwen3-coder-next/.env` (not committed).
 
-**Do not edit** except to change `HF_HUB_OFFLINE` from `0` to `1` after the model is
-downloaded. Changing anything else — particularly adding a `ports:` section or broadening
-the volume mount — breaks the security model.
+**Do not edit the compose file** except to tune vLLM parameters. The one value you will
+need to change over time is `HF_HUB_OFFLINE` — edit it in `.env`, not in the compose file:
 
-Key parameters:
+```bash
+# After model download is confirmed complete:
+# Edit qwen3-coder-next/.env and change HF_HUB_OFFLINE=0 to HF_HUB_OFFLINE=1
+# Then restart vLLM:
+cd ~/code/spark-ai/qwen3-coder-next && docker compose up -d
+```
+
+Key parameters in the compose file:
 - `--max-model-len 131072` — 128K context, proven-stable on a single Spark. The model
   supports 256K but the larger KV cache may cause OOM. Increase to 262144 only after
   confirming stability at 128K.
 - `--gpu-memory-utilization 0.8` — reduce to `0.7` if you see OOM errors on startup.
-- `HF_HUB_OFFLINE=0` — change to `1` once the model is downloaded to block outbound
-  connections from the vLLM container.
 
 ---
 
 ## openclaw/docker-compose.yml
 
-See the file at `openclaw/docker-compose.yml`.
+See the file at `openclaw/docker-compose.yml`. Machine-specific values are in
+`openclaw/.env` (not committed):
 
-**Before first use** replace `YOUR_TAILSCALE_IP` with your Spark's Tailscale IP.
+```bash
+TAILSCALE_IP=           # your Spark's Tailscale IP (tailscale ip -4)
+OPENCLAW_WORKSPACE=     # full path e.g. /home/catlett/openclaw-workspace
+```
 
 Key points:
-- Gateway port 18789 is bound to your Tailscale IP only — never `0.0.0.0`.
-- `~/openclaw-workspace` is the only host path mounted into the container.
+- Gateway port 18789 is bound to `${TAILSCALE_IP}` only — never `0.0.0.0`.
+- `${OPENCLAW_WORKSPACE}` is the only host path mounted into the container, at
+  `/home/node/workspace` inside the container.
 - OpenClaw connects to vLLM via `http://nim:8000/v1` on the shared Docker network.
 - vLLM must be started before OpenClaw so the shared network exists.
 
