@@ -197,6 +197,69 @@ class TestContainerIsolation(unittest.TestCase):
 
 
 # ------------------------------------------------------------------
+# vLLM container isolation tests
+# ------------------------------------------------------------------
+
+class TestVLLMContainerIsolation(unittest.TestCase):
+    """Verify vLLM container security settings."""
+
+    def setUp(self):
+        if not _container_running(VLLM_CONTAINER):
+            self.skipTest('vLLM container not running')
+
+    def test_vllm_no_published_ports(self):
+        """vLLM container must not publish any ports to the host."""
+        result = _run([
+            'docker', 'inspect', '-f',
+            '{{json .NetworkSettings.Ports}}',
+            VLLM_CONTAINER,
+        ])
+        ports = json.loads(result.stdout.strip())
+        for port, bindings in ports.items():
+            self.assertIsNone(
+                bindings,
+                f'vLLM port {port} is published to host: {bindings}',
+            )
+
+    def test_vllm_only_huggingface_cache_mounted(self):
+        """vLLM bind mounts must be limited to ~/.cache/huggingface."""
+        result = _run([
+            'docker', 'inspect', '-f',
+            '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}}\n{{end}}{{end}}',
+            VLLM_CONTAINER,
+        ])
+        bind_sources = [
+            p.strip() for p in result.stdout.strip().splitlines() if p.strip()
+        ]
+        for src in bind_sources:
+            self.assertTrue(
+                src.endswith('/.cache/huggingface'),
+                f'Unexpected vLLM bind mount: {src} — only .cache/huggingface allowed',
+            )
+
+    def test_vllm_not_privileged(self):
+        """vLLM container must not run in privileged mode."""
+        result = _run([
+            'docker', 'inspect', '-f', '{{.HostConfig.Privileged}}',
+            VLLM_CONTAINER,
+        ])
+        self.assertEqual(
+            result.stdout.strip(), 'false',
+            'vLLM container is running in privileged mode!',
+        )
+
+    def test_vllm_not_host_network(self):
+        """vLLM container must use bridge network, not host."""
+        result = _run([
+            'docker', 'inspect', '-f', '{{.HostConfig.NetworkMode}}',
+            VLLM_CONTAINER,
+        ])
+        self.assertNotEqual(
+            result.stdout.strip(), 'host',
+            'vLLM container is using host network mode!',
+        )
+
+# ------------------------------------------------------------------
 # Network isolation tests (require iptables rules applied)
 # ------------------------------------------------------------------
 
