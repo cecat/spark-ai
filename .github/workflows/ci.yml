@@ -23,7 +23,7 @@ jobs:
 
       - name: Validate openclaw compose syntax
         env:
-          TAILSCALE_IP: "localhost"
+          TAILSCALE_IP: "198.51.100.1"
           OPENCLAW_WORKSPACE: "/tmp/workspace"
         run: docker compose -f openclaw/docker-compose.yml config > /dev/null
 
