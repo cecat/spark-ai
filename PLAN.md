@@ -1,12 +1,9 @@
 # spark-ai Project Plan
 
-Feb 24, 2026
-
 **Owner:** Charlie Catlett  
 **Platform:** NVIDIA DGX Spark (GB10, 128GB unified memory, Ubuntu)  
 **Repo:** `~/code/spark-ai` → `github.com/cecat/spark-ai`  
-**Status:** Infrastructure complete; OpenClaw not yet running
-
+**Status:** vLLM running and verified; OpenClaw not yet started
 
 ---
 
@@ -28,10 +25,18 @@ spark-ai/
 ├── README.md                        # Deployment and operations guide
 ├── PLAN.md                          # This file — project context and roadmap
 ├── .gitignore
+├── tests/
+│   ├── test_vllm.py                 # Smoke test: vLLM endpoint reachable from Docker network
+│   ├── test_openclaw.py             # Smoke test: OpenClaw gateway responding on Tailscale IP
+│   └── test_security.py            # Security checks: port bindings, iptables, container isolation
 ├── qwen3-coder-next/
-│   └── docker-compose.yml           # vLLM inference service (COMPLETE)
+│   ├── docker-compose.yml           # vLLM inference service
+│   ├── .env.example                 # committed — shows required variables
+│   └── .env                         # NOT committed — your actual values
 └── openclaw/
-    └── docker-compose.yml           # OpenClaw gateway service (COMPLETE, needs TAILSCALE_IP)
+    ├── docker-compose.yml           # OpenClaw gateway service
+    ├── .env.example                 # committed — shows required variables
+    └── .env                         # NOT committed — your actual values
 ```
 
 **External repos on the Spark (not in this repo):**
@@ -47,16 +52,22 @@ spark-ai/
 |---|---|---|
 | vLLM community image | ✅ Built | `vllm-node` image via `eugr/spark-vllm-docker` |
 | Qwen3-Coder-Next-FP8 | ✅ Downloaded | ~46GB in `~/.cache/huggingface/` |
-| qwen3-coder-next compose | ✅ Ready | `docker compose up -d` from that directory |
-| openclaw compose | ⚠️ Needs edit | Replace `YOUR_TAILSCALE_IP` before first use |
-| OpenClaw onboarding | ⬜ Not started | Run after compose is configured |
+| NVIDIA Container Runtime | ✅ Configured | `nvidia-ctk runtime configure --runtime=docker` done |
+| qwen3-coder-next compose | ✅ Running | Verified startup; API serving on Docker-internal port 8000 |
+| qwen3-coder-next .env | ✅ Created | `HF_HUB_OFFLINE=0` — flip to `1` after confirming model is cached |
+| vLLM smoke test | ✅ Verified | Prompt/response confirmed via Docker network test container |
+| openclaw compose | ✅ Ready | `.env` created with `TAILSCALE_IP` and `OPENCLAW_WORKSPACE` |
+| openclaw-workspace | ✅ Created | `~/openclaw-workspace/` exists on host |
+| Tests directory | ⬜ Not started | `tests/` scaffolding and GitHub Actions workflow needed |
+| OpenClaw onboarding | ⬜ Not started | Run after test scaffolding is in place |
 | Telegram channel | ⬜ Not started | Need @BotFather token |
 | Google credentials | ⬜ Not started | Dedicated agent Google account needed |
 | Slack bot | ⬜ Not started | Minimal-scope bot token needed |
 | iptables rules | ⬜ Not started | Run after containers are up |
+| MacBook SSH hardening | ⬜ Not started | Add `from=` restriction to authorized_keys |
 
-**Next action:** Set `YOUR_TAILSCALE_IP` in `openclaw/docker-compose.yml`, start both
-containers, complete OpenClaw onboarding.
+**Next action:** Create `tests/` directory with smoke tests and GitHub Actions workflow,
+then proceed to OpenClaw onboarding.
 
 ---
 
@@ -227,34 +238,115 @@ By design and enforcement:
 
 ## Development Roadmap
 
-### Phase 1 — Get OpenClaw Running (current)
-- [ ] Set Tailscale IP in `openclaw/docker-compose.yml` and push to repo
-- [ ] Start vLLM and OpenClaw containers
-- [ ] Complete onboarding (local LLM, disable shell, enable sandboxing)
-- [ ] Connect Telegram for initial testing
-- [ ] Apply iptables rules; run security verification checklist
-- [ ] Harden MacBook SSH authorized_keys
+### Phase 1 — Infrastructure ✅ Complete
+- [x] Build vLLM community image (`eugr/spark-vllm-docker`)
+- [x] Download Qwen3-Coder-Next-FP8 model weights (~46GB)
+- [x] Configure NVIDIA Container Runtime for Docker
+- [x] Create and validate `qwen3-coder-next/docker-compose.yml`
+- [x] Create and validate `openclaw/docker-compose.yml`
+- [x] Set up `.env` files for both services
+- [x] Create `~/openclaw-workspace/` on host
+- [x] Start vLLM and verify prompt/response via Docker network test
+- [x] Create GitHub repo (`cecat/spark-ai`) and push all committed files
 
-### Phase 2 — Connect Data Sources
+### Phase 2 — Tests and CI (current)
+- [ ] Create `tests/test_vllm.py` — smoke test vLLM endpoint from inside Docker network
+- [ ] Create `tests/test_openclaw.py` — smoke test OpenClaw gateway on Tailscale IP
+- [ ] Create `tests/test_security.py` — verify port bindings, container isolation, iptables
+- [ ] Create `.github/workflows/ci.yml` — GitHub Actions workflow to run tests
+- [ ] Document how to run tests locally vs in CI
+
+### Phase 3 — OpenClaw Onboarding
+- [ ] Start OpenClaw container (`docker compose up -d` in `openclaw/`)
+- [ ] Run onboarding wizard (local LLM, disable shell, enable sandboxing)
+- [ ] Connect Telegram for initial interactive testing
+- [ ] Apply iptables rules; run security verification checklist
+- [ ] Harden MacBook SSH `authorized_keys` with `from=` restriction
+- [ ] Verify all security checks pass
+
+### Phase 4 — Connect Data Sources
 - [ ] Create dedicated Google account `tpc-agent@...`
 - [ ] Share three Google Sheets with dedicated account (view-only)
-- [ ] Connect Google integration during OpenClaw setup
+- [ ] Connect Google integration in OpenClaw
 - [ ] Create Slack bot with minimal scopes; invite to target channel
 - [ ] Connect Slack channel in OpenClaw
 - [ ] Test: ask agent to summarize one sheet via Telegram
 
-### Phase 3 — Report Generation
+### Phase 5 — Report Generation
 - [ ] Identify exact field names and structure of each Google Form / Sheet
 - [ ] Develop and test prompt/skill for per-sheet summary report
 - [ ] Test Markdown report output to `~/openclaw-workspace/reports/`
 - [ ] Test Slack delivery of report file
 - [ ] Optionally: test Google Doc creation and sharing
 
-### Phase 4 — Scheduling and Hardening
+### Phase 6 — Scheduling and Hardening
 - [ ] Configure scheduled runs (weekly or as appropriate for TPC cadence)
 - [ ] Add report archiving / deduplication in workspace
 - [ ] Review OpenClaw logs for any unexpected behavior
 - [ ] Assess whether additional Google Forms should be added
+
+---
+
+## Testing Strategy
+
+Tests live in `tests/` and are designed to run both locally on the Spark and in GitHub
+Actions CI. Because vLLM and OpenClaw run in Docker and the model API is intentionally
+not exposed to the host, tests that exercise the actual inference endpoint must run
+inside the Docker network.
+
+### Test categories
+
+**`tests/test_vllm.py` — vLLM smoke test**
+Runs inside the `qwen3-coder-next_nim_net` Docker network via a temporary container.
+Sends a minimal prompt to `http://nim:8000/v1/chat/completions` and asserts:
+- HTTP 200 response
+- Response contains `choices[0].message.content` (non-empty string)
+- Model name in response matches `Qwen/Qwen3-Coder-Next-FP8`
+- Response time under a reasonable threshold
+
+**`tests/test_openclaw.py` — OpenClaw gateway smoke test**
+Connects to `http://${TAILSCALE_IP}:18789` and asserts:
+- Gateway is reachable (HTTP response, not connection refused)
+- Health endpoint returns expected status
+Requires OpenClaw to be running and `TAILSCALE_IP` set in environment.
+
+**`tests/test_security.py` — Security verification**
+Runs on the Spark host (not inside a container). Asserts:
+- Port 8000 is NOT bound on the host (`ss -ltnp`)
+- Port 18789 is bound to Tailscale IP only, not `0.0.0.0`
+- Container cannot reach LAN gateway (ping test via `docker exec`)
+- Container cannot reach Tailscale CGNAT range
+- No `~/.ssh` mount exists inside the OpenClaw container
+- `openclaw-config` volume exists and is not world-readable
+
+### Running tests locally
+
+```bash
+# From the Spark, with both containers running:
+cd ~/code/spark-ai
+
+# vLLM test (spins up a temp container on nim_net)
+python3 tests/test_vllm.py
+
+# Security test (runs on host)
+python3 tests/test_security.py
+
+# OpenClaw test (requires OpenClaw running)
+TAILSCALE_IP=100.120.99.52 python3 tests/test_openclaw.py
+```
+
+### GitHub Actions CI
+
+CI runs on push/PR to `main`. Because the Spark is not a GitHub-hosted runner, the
+workflow uses a **self-hosted runner** registered on the Spark, or alternatively runs
+only the host-side and structural tests (port binding checks, compose file validation,
+`.env.example` completeness) without requiring the containers to be live.
+
+The `.github/workflows/ci.yml` workflow will:
+1. Validate compose file syntax (`docker compose config`)
+2. Check that `.env.example` files exist and contain all required keys
+3. Check that no `.env` files are committed
+4. On self-hosted runner: run `test_security.py` and `test_vllm.py`
 
 ---
 
@@ -296,7 +388,7 @@ local AI and gives full control over the security boundary.
 | Spark Tailscale IP | `100.120.99.52` |
 | Spark LAN IP (Ethernet) | `10.0.5.124` |
 | Spark LAN IP (WiFi) | `10.0.5.123` |
-| LAN subnet | `10.0.5.0/22` (confirm with `ip route`) |
+| LAN subnet | `10.0.4.0/22` (confirmed via `ip route show`) |
 | Model | `Qwen/Qwen3-Coder-Next-FP8` |
 | Model cache | `~/.cache/huggingface/hub/models--Qwen--Qwen3-Coder-Next-FP8/` |
 | Workspace | `~/openclaw-workspace/` |
@@ -305,6 +397,8 @@ local AI and gives full control over the security boundary.
 | OpenClaw port | `18789` |
 | vLLM port | `8000` (Docker-internal only) |
 | Docker network | `qwen3-coder-next_nim_net` |
+| vLLM startup time | ~2 min (model load 52s + torch.compile 28s + CUDA graphs 12s + warmup) |
+| vLLM notable warnings | GDS not supported (no impact); missing MoE GB10 config (uses defaults); KV scale 1.0 (minor accuracy tradeoff) — all expected, none actionable |
 
 ---
 
