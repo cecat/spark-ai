@@ -1,7 +1,11 @@
 # docker-compose.yml — OpenClaw gateway
 # Security: gateway bound to Tailscale IP only; workspace scoped to single folder
 #
-# BEFORE FIRST USE: replace YOUR_TAILSCALE_IP with output of: tailscale ip -4
+# BEFORE FIRST USE: Create a .env file in the same directory as this docker-compose.yml, with contents:
+# TAILSCALE_IP=x.x.x.x
+# OPENCLAW_WORKSPACE=<your_home_dir_path>/openclaw-workspace
+#
+# You will find your TAILSCALE IP using "tailscale ip -4" 
 #
 # DO NOT change the ports: binding to 0.0.0.0 — this would expose the gateway
 #   to your LAN and potentially the internet.
@@ -16,14 +20,13 @@ services:
     restart: unless-stopped
     ports:
       # IMPORTANT: bind to Tailscale IP only — not 0.0.0.0
-      # Replace YOUR_TAILSCALE_IP with output of: tailscale ip -4
-      - "YOUR_TAILSCALE_IP:18789:18789"
+      - "${TAILSCALE_IP}:18789:18789"
     volumes:
       # OpenClaw config and memory — internal use only
       - openclaw-config:/home/node/.openclaw
       # Workspace — the ONLY host folder the agent can read/write
       # Do NOT replace ~/openclaw-workspace with ~/ or any broader path
-      - ~/openclaw-workspace:/home/node/workspace:rw
+      - ${OPENCLAW_WORKSPACE}:/home/node/workspace:rw  
     environment:
       - NODE_ENV=production
       - OPENAI_API_BASE=http://nim:8000/v1
