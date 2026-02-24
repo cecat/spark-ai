@@ -3,7 +3,7 @@
 **Owner:** Charlie Catlett  
 **Platform:** NVIDIA DGX Spark (GB10, 128GB unified memory, Ubuntu)  
 **Repo:** `~/code/spark-ai` → `github.com/cecat/spark-ai`  
-**Status:** vLLM running and verified; OpenClaw not yet started
+**Status:** vLLM running and verified; tests and CI in place; OpenClaw not yet started
 
 ---
 
@@ -29,6 +29,9 @@ spark-ai/
 │   ├── test_vllm.py                 # Smoke test: vLLM endpoint reachable from Docker network
 │   ├── test_openclaw.py             # Smoke test: OpenClaw gateway responding on Tailscale IP
 │   └── test_security.py            # Security checks: port bindings, iptables, container isolation
+├── .github/
+│   └── workflows/
+│       └── ci.yml                   # Structural checks + live tests on self-hosted runner
 ├── qwen3-coder-next/
 │   ├── docker-compose.yml           # vLLM inference service
 │   ├── .env.example                 # committed — shows required variables
@@ -58,16 +61,15 @@ spark-ai/
 | vLLM smoke test | ✅ Verified | Prompt/response confirmed via Docker network test container |
 | openclaw compose | ✅ Ready | `.env` created with `TAILSCALE_IP` and `OPENCLAW_WORKSPACE` |
 | openclaw-workspace | ✅ Created | `~/openclaw-workspace/` exists on host |
-| Tests directory | ⬜ Not started | `tests/` scaffolding and GitHub Actions workflow needed |
+| Tests directory | ✅ Created | `tests/` with vLLM, OpenClaw, and security tests; CI workflow in `.github/` |
 | OpenClaw onboarding | ⬜ Not started | Run after test scaffolding is in place |
 | Telegram channel | ⬜ Not started | Need @BotFather token |
 | Google credentials | ⬜ Not started | Dedicated agent Google account needed |
 | Slack bot | ⬜ Not started | Minimal-scope bot token needed |
 | iptables rules | ⬜ Not started | Run after containers are up |
-| MacBook SSH hardening | ⬜ Not started | Add `from=` restriction to authorized_keys |
+| MacBook SSH hardening | ✅ Done | Removed authorized_keys (no passwordless SSH into Mac needed) |
 
-**Next action:** Create `tests/` directory with smoke tests and GitHub Actions workflow,
-then proceed to OpenClaw onboarding.
+**Next action:** Proceed to OpenClaw onboarding (Phase 3).
 
 ---
 
@@ -193,7 +195,7 @@ and shell. The primary risks are:
 | Shell tool | Disabled in agent.json | Set during onboarding |
 | Agent sandboxing | Enabled in agent.json | Set during onboarding |
 | Telegram access | DM-only pairing; local gateway mode | Set during onboarding |
-| SSH backstop | `from=` restriction in MacBook authorized_keys | Manual step; see README |
+|| SSH backstop | Removed MacBook authorized_keys (no passwordless SSH needed) | Done |
 | Credential hygiene | `read -s` for tokens; temp script for HF download | README pattern |
 
 ### Dedicated Account Strategy
@@ -249,19 +251,20 @@ By design and enforcement:
 - [x] Start vLLM and verify prompt/response via Docker network test
 - [x] Create GitHub repo (`cecat/spark-ai`) and push all committed files
 
-### Phase 2 — Tests and CI (current)
-- [ ] Create `tests/test_vllm.py` — smoke test vLLM endpoint from inside Docker network
-- [ ] Create `tests/test_openclaw.py` — smoke test OpenClaw gateway on Tailscale IP
-- [ ] Create `tests/test_security.py` — verify port bindings, container isolation, iptables
-- [ ] Create `.github/workflows/ci.yml` — GitHub Actions workflow to run tests
-- [ ] Document how to run tests locally vs in CI
+### Phase 2 — Tests and CI ✅ Complete
+- [x] Create `tests/test_vllm.py` — smoke test vLLM endpoint from inside Docker network
+- [x] Create `tests/test_openclaw.py` — smoke test OpenClaw gateway on Tailscale IP
+- [x] Create `tests/test_security.py` — port bindings, container isolation, iptables rules,
+  agent config, HF_HUB_OFFLINE, MacBook SSH backstop (`--macbook` flag)
+- [x] Create `.github/workflows/ci.yml` — structural checks + live tests on self-hosted runner
+- [x] MacBook SSH hardening — removed authorized_keys (no passwordless SSH into Mac)
 
-### Phase 3 — OpenClaw Onboarding
+### Phase 3 — OpenClaw Onboarding (current)
 - [ ] Start OpenClaw container (`docker compose up -d` in `openclaw/`)
 - [ ] Run onboarding wizard (local LLM, disable shell, enable sandboxing)
 - [ ] Connect Telegram for initial interactive testing
 - [ ] Apply iptables rules; run security verification checklist
-- [ ] Harden MacBook SSH `authorized_keys` with `from=` restriction
+- [x] Harden MacBook SSH — removed `authorized_keys` (done in Phase 2)
 - [ ] Verify all security checks pass
 
 ### Phase 4 — Connect Data Sources
@@ -311,13 +314,17 @@ Connects to `http://${TAILSCALE_IP}:18789` and asserts:
 Requires OpenClaw to be running and `TAILSCALE_IP` set in environment.
 
 **`tests/test_security.py` — Security verification**
-Runs on the Spark host (not inside a container). Asserts:
+Runs on the Spark host (not inside a container) with additional `--macbook` mode. Asserts:
 - Port 8000 is NOT bound on the host (`ss -ltnp`)
-- Port 18789 is bound to Tailscale IP only, not `0.0.0.0`
-- Container cannot reach LAN gateway (ping test via `docker exec`)
-- Container cannot reach Tailscale CGNAT range
-- No `~/.ssh` mount exists inside the OpenClaw container
+- Port 18789 is bound to Tailscale IP only
+- Only `~/openclaw-workspace` bind-mounted; no sensitive paths (`/etc`, `~/.ssh`, `/root`)
+- OpenClaw not running as root
+- Container cannot reach LAN gateway, Tailscale CGNAT range, or outbound SSH (TCP/22)
+- `iptables -L DOCKER-USER -n` contains DROP rules for LAN, CGNAT, and dpt:22
 - `openclaw-config` volume exists and is not world-readable
+- `HF_HUB_OFFLINE=1` in `qwen3-coder-next/.env`
+- Agent shell tool disabled and sandbox enabled in `agent.json` (after onboarding)
+- (`--macbook`) Every key in `~/.ssh/authorized_keys` has `from=` restriction
 
 ### Running tests locally
 
@@ -342,11 +349,10 @@ workflow uses a **self-hosted runner** registered on the Spark, or alternatively
 only the host-side and structural tests (port binding checks, compose file validation,
 `.env.example` completeness) without requiring the containers to be live.
 
-The `.github/workflows/ci.yml` workflow will:
-1. Validate compose file syntax (`docker compose config`)
-2. Check that `.env.example` files exist and contain all required keys
-3. Check that no `.env` files are committed
-4. On self-hosted runner: run `test_security.py` and `test_vllm.py`
+The `.github/workflows/ci.yml` workflow:
+1. Validate compose file syntax (`docker compose config` with dummy env vars)
+2. Check that no `.env` files are committed
+3. On self-hosted runner: run `test_security.py` and `test_vllm.py`
 
 ---
 
