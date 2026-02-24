@@ -15,7 +15,7 @@ services:
     ipc: host
     environment:
       - HF_TOKEN           # pass-through only — set in shell, never hardcode
-      - HF_HUB_OFFLINE=0   # change to 1 after first successful model download
+      - HF_HUB_OFFLINE=${HF_HUB_OFFLINE}
     volumes:
       - ~/.cache/huggingface:/root/.cache/huggingface
     # NO ports: section — model API must not be published to the host
