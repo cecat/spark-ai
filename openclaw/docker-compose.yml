@@ -15,7 +15,7 @@
 
 services:
   openclaw-gateway:
-    image: openclaw/openclaw:latest
+    image: ghcr.io/openclaw/openclaw:latest
     container_name: openclaw-gateway
     restart: unless-stopped
     ports:
@@ -36,7 +36,7 @@ services:
     # Runs as non-root node user (uid 1000) — do not override with user: root
 
   openclaw-cli:
-    image: openclaw/openclaw:latest
+    image: ghcr.io/openclaw/openclaw:latest
     profiles:
       - cli
     volumes:
