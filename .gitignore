@@ -1,0 +1,9 @@
+# Never commit these
+*.env
+.env*
+**/secrets/
+**/.openclaw/
+**/nim-cache/
+
+# macOS
+.DS_Store
