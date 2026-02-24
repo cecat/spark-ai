@@ -300,10 +300,75 @@ INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8000
 ```
 
-First start takes 3-5 minutes while vLLM compiles Triton kernels. Subsequent starts
-are fast once kernels are cached.
+First start takes about 2 minutes (model load ~52s + torch.compile ~28s + CUDA graph
+capture ~12s + warmup). Subsequent starts are faster once kernels are cached.
 
-### Step 2: Start OpenClaw
+### Step 2: Fix OpenClaw volume permissions (one-time)
+
+The `openclaw-config` volume is created as root by Docker. OpenClaw runs as `node`
+(uid 1000) and will crash mid-onboarding with `EACCES: permission denied` without
+this fix. Run it once before onboarding:
+
+```bash
+sudo chown -R 1000:1000 /var/lib/docker/volumes/openclaw_openclaw-config/_data
+```
+
+### Step 3: Run OpenClaw onboarding
+
+```bash
+cd ~/code/spark-ai/openclaw
+docker compose run --rm openclaw-cli onboard --no-install-daemon
+```
+
+Answer each question as follows. See `ONBOARDING.md` for full rationale.
+
+| Question | Answer |
+|---|---|
+| Security warning | Yes |
+| Onboarding mode | Manual |
+| What to set up | Local gateway (this machine) |
+| Workspace directory | `/home/node/workspace` (not the pre-filled default) |
+| Model/auth provider | vLLM |
+| vLLM base URL | `http://nim:8000/v1` (not the pre-filled `127.0.0.1`) |
+| vLLM API key | `sk-dummy` (any non-empty string) |
+| vLLM model | `Qwen/Qwen3-Coder-Next-FP8` (replace pre-filled Llama default) |
+| Default model | Keep current |
+| Gateway port | `18789` |
+| Gateway bind | LAN (0.0.0.0) |
+| Gateway auth | Token |
+| Tailscale exposure | Off |
+| Gateway token | Leave blank (auto-generate) |
+| Configure chat channels | Select channel or Finished to skip |
+| Configure skills | No |
+| Enable hooks | Skip for now |
+| Shell completion | No |
+
+**Important — copy your token:** The dashboard URL with token is displayed near the
+end of onboarding:
+```
+http://172.18.0.3:18789/#token=<YOUR_TOKEN>
+```
+Save this token to 1Password as "OpenClaw Gateway Token" immediately. If you miss it,
+retrieve it later with:
+```bash
+cd ~/code/spark-ai/openclaw
+docker compose run --rm openclaw-cli dashboard --no-open
+```
+
+**Health check failure is normal:** The wizard reports a health check failure because
+the gateway container is not running yet — onboarding only writes config. This is
+expected. Start the gateway in the next step.
+
+**Workspace path note:** The wizard pre-fills `/home/node/.openclaw/workspace` — this
+is wrong for our setup. Always enter `/home/node/workspace`, which is where
+`~/openclaw-workspace` on the Spark host is mounted by Docker.
+
+**Base URL note:** The wizard pre-fills `http://127.0.0.1:8000/v1` — this is wrong.
+`127.0.0.1` refers to localhost inside the OpenClaw container, which cannot reach
+vLLM. Use `http://nim:8000/v1` — `nim` is the vLLM service name on the shared Docker
+network.
+
+### Step 4: Start the OpenClaw gateway
 
 ```bash
 cd ~/code/spark-ai/openclaw
@@ -311,38 +376,29 @@ docker compose up -d openclaw-gateway
 docker compose logs -f openclaw-gateway
 ```
 
-### Step 3: Complete OpenClaw onboarding
+### Step 5: Access the dashboard
 
-```bash
-cd ~/code/spark-ai/openclaw
-docker compose run --rm openclaw-cli onboard --no-install-daemon
+From your Mac (connected via Tailscale), open:
+```
+http://100.120.99.52:18789/#token=YOUR_TOKEN
 ```
 
-During onboarding:
-1. **AI Provider** — select "OpenAI-compatible", base URL `http://nim:8000/v1`, API key `dummy`
-2. **Gateway mode** — choose `local`
-3. **Messaging channel** — Telegram recommended (see Step 4)
-4. **Agent sandboxing** — enable when prompted
-5. **Shell tool** — **leave disabled**. This is the most important security setting.
-   A compromised agent with shell access could attempt to SSH out of the container.
-   Enable only if you have a specific understood need for it.
+Note: the `172.18.x.x` URL shown during onboarding is the container's internal IP and
+only works from inside the Docker network. Use the Spark's Tailscale IP from your Mac.
 
-### Step 4: Connect Telegram
+### Step 6: Connect Slack
+
+Slack is the production channel for TPC reporting. After the gateway is running:
 
 ```bash
-# Get a bot token from @BotFather on Telegram, then:
 cd ~/code/spark-ai/openclaw
 docker compose run --rm openclaw-cli channels add \
-  --channel telegram \
-  --token YOUR_TELEGRAM_BOT_TOKEN
-
-docker compose up -d openclaw-gateway
-
-# Approve the pairing code OpenClaw sends to your Telegram
-docker compose run --rm openclaw-cli pairing approve telegram YOUR_PAIRING_CODE
+  --channel slack \
+  --token YOUR_SLACK_BOT_TOKEN
 ```
 
-Verify `gateway.mode` is `local` and the channel is locked to your account only.
+See `PLAN.md` for Slack bot setup steps (minimal scopes: `chat:write`, `files:write`,
+`channels:read`, `channels:join`).
 
 ---
 
@@ -520,6 +576,13 @@ docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi
 # Confirm model fully downloaded (~46GB)
 du -sh ~/.cache/huggingface/hub/models--Qwen--Qwen3-Coder-Next-FP8/
 ```
+
+**`EACCES: permission denied, mkdir '/home/node/.openclaw/agents'` during onboarding:**
+The volume was created as root. Fix with:
+```bash
+sudo chown -R 1000:1000 /var/lib/docker/volumes/openclaw_openclaw-config/_data
+```
+Then re-run onboarding. See Step 2 above.
 
 **`unknown or invalid runtime name: nvidia`:**
 The NVIDIA Container Runtime isn't registered with Docker. Run:
