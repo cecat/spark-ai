@@ -26,7 +26,7 @@ services:
       - openclaw-config:/home/node/.openclaw
       # Workspace — the ONLY host folder the agent can read/write
       # Do NOT replace ~/openclaw-workspace with ~/ or any broader path
-      - ${OPENCLAW_WORKSPACE}:/home/node/workspace:rw  
+      - ${OPENCLAW_WORKSPACE}:/home/node/agents:rw  
     environment:
       - NODE_ENV=production
       - OPENAI_API_BASE=http://nim:8000/v1
