@@ -5,6 +5,7 @@
 docker compose ps
 docker logs vllm-qwen3-coder-next --tail 50
 docker logs openclaw-gateway --tail 50
+docker logs openclaw-gateway --since 30m 2>&1 | tail -50
 ```
 
 ---
@@ -27,9 +28,6 @@ Reduce `--gpu-memory-utilization` from `0.8` to `0.7` in `qwen3-coder-next/docke
 **Slow first start (~2 min)**
 Normal — vLLM compiles Triton kernels on first run. Subsequent starts are faster.
 
-**Model redownloads on every start**
-Confirm `~/.cache/huggingface` is mounted correctly in `qwen3-coder-next/docker-compose.yml`.
-
 **Confirm model fully downloaded**
 ```bash
 du -sh ~/.cache/huggingface/hub/models--Qwen--Qwen3-Coder-Next-FP8/
@@ -38,32 +36,55 @@ du -sh ~/.cache/huggingface/hub/models--Qwen--Qwen3-Coder-Next-FP8/
 
 ---
 
+## OpenClaw gateway crash loop
+
+**Symptom:** `docker ps` shows container restarting every ~60 seconds.
+
+**Most common cause:** `gateway.auth.mode: "password"` without a `password` field — often introduced by an agent editing openclaw.json.
+
+**Diagnose without a running container:**
+```bash
+docker run --rm -v openclaw_openclaw-config:/data alpine cat /data/openclaw.json | grep -A4 '"auth"'
+```
+
+**Fix — write corrected config directly to volume:**
+```bash
+docker run --rm -v openclaw_openclaw-config:/data alpine sh -c 'cat > /data/openclaw.json << '"'"'EOF'"'"'
+{ ... corrected config with "mode": "token" and "token": "your-token" ... }
+EOF'
+docker compose restart openclaw-gateway
+docker logs openclaw-gateway --tail 20
+```
+
+**Note:** OpenClaw's `doctor` runs on startup and may rewrite the config. Always verify what is actually in the volume after a restart, not just what you wrote.
+
+---
+
 ## OpenClaw onboarding
 
-**`EACCES: permission denied, mkdir '/home/node/.openclaw/agents'`**
-Docker created the volume as root. Fix before re-running onboarding:
+**`EACCES: permission denied`**
 ```bash
 sudo chown -R 1000:1000 /var/lib/docker/volumes/openclaw_openclaw-config/_data
 ```
 
-**Onboarding pre-fills wrong workspace path**
-Clear `/home/node/.openclaw/workspace` and enter `/home/node/workspace` — that is where Docker mounts `~/openclaw-workspace`.
+**Wrong workspace path pre-filled**
+Enter `/home/node/agents/main` — docker-compose.yml mounts `OPENCLAW_WORKSPACE` at `/home/node/agents`.
 
-**Onboarding pre-fills wrong vLLM base URL**
-Clear `http://127.0.0.1:8000/v1` and enter `http://nim:8000/v1` — `nim` is the vLLM service name on the shared Docker network.
+**Wrong vLLM URL pre-filled**
+Enter `http://nim:8000/v1` — `nim` is the vLLM service name on the shared Docker network.
 
 **Health check failure at end of onboarding**
-Expected — the gateway isn't running yet. Start it after onboarding completes.
+Expected — gateway is not running yet. Start it after onboarding completes.
 
 ---
 
 ## OpenClaw dashboard
 
 **"control ui requires HTTPS or localhost"**
-Plain HTTP over Tailscale IP is rejected. Set up Tailscale Serve (README Step 6).
+Set up Tailscale Serve (README Step 7).
 
 **"pairing required" after Tailscale Serve is set up**
-The gateway doesn't trust the proxy yet. Run the config patch in README Step 6 and restart.
+Run the config patch in README Step 7 and restart.
 
 **Token lost**
 ```bash
@@ -71,35 +92,52 @@ cd ~/code/spark-ai/openclaw
 docker compose run --rm openclaw-cli dashboard --no-open
 ```
 
-**Dashboard URL**
-Use `https://spark-ts.YOUR-TAILNET.ts.net/#token=YOUR_TOKEN`, not the `172.18.x.x` URL shown during onboarding (that is a Docker-internal IP).
+**Config shows "invalid" after editing**
+Common causes:
+- `channels.slack.channels` must be an object, not an array: `{ "C123": { "allow": true } }` not `["C123"]`
+- `gateway.auth.mode: "password"` requires a `"password"` field — use `"token"` mode instead
+- `webhookPath` must be present even in Socket Mode — keep it as `/slack/events`
+- `channels` section must be at the top level of openclaw.json, not nested inside `gateway`
+
+---
+
+## Slack
+
+**"Sending messages to this app has been turned off"**
+Go to **App Home → Messages Tab** — enable it and check "Allow users to send messages". Reinstall the app after any scope or feature change.
+
+**Agent shows thinking but never delivers a message**
+Set `"streaming": false` in the `channels.slack` config block. Do not add `assistant:write` scope — it enables Slack's native AI streaming API which silently drops messages with `missing_recipient_team_id` errors in this setup.
+
+**`missing_recipient_team_id` in logs**
+Caused by `assistant:write` scope and/or Agents & AI Apps feature being enabled. Remove `assistant:write` from Bot Token Scopes, disable Agents & AI Apps in Slack app settings, reinstall app, and set `"streaming": false`.
+
+**`missing_scope` warning in logs**
+Bot cannot resolve channel names from IDs — cosmetic, does not affect message delivery.
+
+**Agent not responding in a channel**
+Check in order:
+1. Bot invited: `/invite @BotName`
+2. Channel ID listed in `channels.slack.channels` with `"allow": true`
+3. `groupPolicy: "allowlist"` with an empty `channels` object blocks everything
+4. `@BotName` mention included (required when `requireMention: true`)
+5. Check logs: `docker logs openclaw-gateway --tail 50`
+
+**DMs not working**
+Ensure `im:read` and `im:write` scopes are present. Reinstall the app after adding scopes.
+
+**Multi-agent routing not working**
+The `channels.slack.channels` allowlist controls access; `bindings` controls which agent handles a channel. Both must be configured — a channel in `bindings` but not in the allowlist will be silently ignored.
 
 ---
 
 ## Networking
 
 **OpenClaw cannot reach vLLM**
-vLLM must start before OpenClaw so the shared network exists. Check:
+vLLM must start before OpenClaw so the shared network exists:
 ```bash
 docker network ls | grep nim_net
-```
-
-**Verify vLLM reachable from inside Docker network**
-```bash
-docker run --rm --network qwen3-coder-next_nim_net curlimages/curl:latest \
-  http://nim:8000/v1/models
-```
-
-**Verify OpenClaw port binding**
-```bash
-ss -tlnp | grep 18789
-# Must show 100.120.99.52:18789 — NOT 0.0.0.0:18789
-```
-
-**Verify iptables DROP rules are in place**
-```bash
-sudo iptables -L DOCKER-USER -n -v | grep DROP
-# Must show 3 rules: LAN, Tailscale CGNAT, port 22
+docker run --rm --network qwen3-coder-next_nim_net curlimages/curl:latest http://nim:8000/v1/models
 ```
 
 **iptables rules lost after reboot**
@@ -109,22 +147,11 @@ sudo apt install iptables-persistent -y && sudo netfilter-persistent save
 
 ---
 
-## Security verification (run after fresh deployment)
+## Security verification
 
 ```bash
-# vLLM not exposed to host
-ss -ltnp | grep :8000 || echo "OK"
-
-# OpenClaw Tailscale-only
-ss -tlnp | grep 18789   # must show 100.120.99.52, not 0.0.0.0
-
-# No SSH keys in container
+ss -ltnp | grep :8000 || echo "OK"              # vLLM not exposed to host
+ss -tlnp | grep 18789                            # must show TAILSCALE_IP, not 0.0.0.0
 docker compose exec openclaw-gateway ls /home/node/.ssh 2>&1   # must say no such file
-
-# Container cannot reach LAN
-docker compose exec openclaw-gateway ping -c 2 10.0.4.1   # must show 100% loss
-
-# Container cannot SSH out
-docker compose exec openclaw-gateway timeout 5 bash -c \
-  "echo > /dev/tcp/github.com/22" 2>&1 || echo "Port 22 blocked OK"
+sudo iptables -L DOCKER-USER -n | grep DROP      # must show 3 DROP rules
 ```

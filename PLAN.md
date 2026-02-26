@@ -156,8 +156,14 @@ on task. Suggested `agent.json` settings:
 
 1. Go to https://api.slack.com/apps → **Create New App** → **From scratch**
 2. Name: `tpc-reports-bot`; select the TPC Slack workspace
-3. Under **OAuth & Permissions**, add scopes: `chat:write`, `files:write`,
-   `channels:read`, `channels:join`
+3. Under **OAuth & Permissions**, add these minimum required scopes:
+   `chat:write`, `im:history`, `im:read`, `im:write`, `app_mentions:read`
+
+   Optional scopes (add if you want the agent to read channel history, react to messages, or handle files):
+   `channels:history`, `channels:read`, `files:read`, `files:write`,
+   `groups:history`, `mpim:history`, `reactions:read`, `reactions:write`, `users:read`
+
+   **Do NOT add `assistant:write`** — it enables Slack's native AI streaming API which causes silent message delivery failures in this setup.
 4. Install the app to the workspace; copy the **Bot User OAuth Token** (`xoxb-...`)
 5. Invite the bot to the target channel: `/invite @tpc-reports-bot`
 6. During OpenClaw Slack channel setup, provide this token
@@ -183,20 +189,21 @@ and shell. The primary risks are:
 
 ### Security Layers in Place
 
-| Layer | Implementation | File |
-|---|---|---|
-| Network ingress | Port 18789 bound to Tailscale IP only | `openclaw/docker-compose.yml` |
-| Model API isolation | Port 8000 not published to host | `qwen3-coder-next/docker-compose.yml` |
-| Filesystem isolation | Only `~/openclaw-workspace` mounted | `openclaw/docker-compose.yml` |
-| Container user | Runs as `node` uid 1000, non-root | OpenClaw default; do not override |
-| LAN lateral movement | iptables DOCKER-USER drop rule | Manual step; see README |
-| Tailscale lateral movement | iptables DOCKER-USER drop rule | Manual step; see README |
-| Outbound SSH | iptables TCP/22 drop rule | Manual step; see README |
-| Shell tool | Disabled in agent.json | Set during onboarding |
-| Agent sandboxing | Enabled in agent.json | Set during onboarding |
-| Telegram access | DM-only pairing; local gateway mode | Set during onboarding |
-|| SSH backstop | Removed MacBook authorized_keys (no passwordless SSH needed) | Done |
-| Credential hygiene | `read -s` for tokens; temp script for HF download | README pattern |
+| Layer | Implementation | Status | File |
+|---|---|---|---|
+| Network ingress | Port 18789 bound to Tailscale IP only | ✅ Done | `openclaw/docker-compose.yml` |
+| Model API isolation | Port 8000 not published to host | ✅ Done | `qwen3-coder-next/docker-compose.yml` |
+| Filesystem isolation | Only `~/code/spark-ai-agents` mounted at `/home/node/agents` | ✅ Done | `openclaw/docker-compose.yml` |
+| Container user | Runs as `node` uid 1000, non-root | ✅ Done | OpenClaw default; do not override |
+| LAN lateral movement | iptables DOCKER-USER drop rule | ⬜ TODO — verify in place | Manual step; see README |
+| Tailscale lateral movement | iptables DOCKER-USER drop rule | ⬜ TODO — verify in place | Manual step; see README |
+| Outbound SSH | iptables TCP/22 drop rule | ⬜ TODO — verify in place | Manual step; see README |
+| Shell/exec tool | Disable via `tools.deny` in openclaw.json | ⚠️ TODO — not configured; risky before Phase 4 | openclaw.json |
+| Agent sandboxing | Enable sandbox in openclaw.json | ⚠️ TODO — off by default; risky before Phase 4 | openclaw.json |
+| Config writes | `configWrites: false` per channel; `commands.config: false` | ⬜ TODO — low risk but agent can disrupt itself | openclaw.json |
+| Slack access | DM-only pairing; Tailscale-only port | ✅ Done | openclaw.json |
+| SSH backstop | Removed MacBook authorized_keys | ✅ Done | — |
+| Credential hygiene | `read -s` for tokens; temp script for HF download | ✅ Done | README pattern |
 
 ### Dedicated Account Strategy
 
@@ -260,12 +267,15 @@ By design and enforcement:
 - [x] MacBook SSH hardening — removed authorized_keys (no passwordless SSH into Mac)
 
 ### Phase 3 — OpenClaw Onboarding (current)
-- [ ] Start OpenClaw container (`docker compose up -d` in `openclaw/`)
-- [ ] Run onboarding wizard (local LLM, disable shell, enable sandboxing)
-- [ ] Connect Telegram for initial interactive testing
-- [ ] Apply iptables rules; run security verification checklist
+- [x] Start OpenClaw container (`docker compose up -d` in `openclaw/`)
+- [x] Run onboarding wizard (local LLM)
+- [x] Connect Slack — main agent (DMs) and chattpc26 agent (channel C09KGGMS116)
 - [x] Harden MacBook SSH — removed `authorized_keys` (done in Phase 2)
-- [ ] Verify all security checks pass
+- [ ] Apply iptables rules; verify in place (`sudo iptables -L DOCKER-USER -n | grep DROP`)
+- [ ] Disable exec/shell tools via `tools.deny` in openclaw.json ⚠️ risky gap
+- [ ] Enable agent sandboxing in openclaw.json ⚠️ risky gap — must be done before Phase 4
+- [ ] Set `configWrites: false` and `commands.config: false` to prevent agents editing gateway config
+- [ ] Verify all security checks pass (see TROUBLESHOOT.md)
 
 ### Phase 4 — Connect Data Sources
 - [ ] Create dedicated Google account `tpc-agent@...`

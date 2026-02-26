@@ -100,13 +100,11 @@ Go to **Install App → Install to Workspace**, approve, and copy the `xoxb-...`
 
 > Note: `streaming: false` prevents use of Slack's native streaming API, which is unreliable without the `assistant:write` scope. Messages still deliver normally.
 
-> Note: `webhookPath` is for HTTP mode only — but omitting it generated a config error...
+> Note: `webhookPath` is documented as HTTP mode only, but the config validator may require it even in Socket Mode. Leave it as `/slack/events`.
 
-> Note: `groupPolicy: "allowlist"` requires every channel the bot should respond in to be listed under `channels`. An empty allowlist means the bot responds nowhere. The channel number comes from the ID in the link to the channel (in Slack, when you right-click to get a link to the channel).
+> Note: `groupPolicy: "allowlist"` requires every channel the bot should respond in to be listed under `channels`. An empty allowlist means the bot responds nowhere.
 
 ### openclaw.json — agents and bindings section
-
-Note in this example you may be using a different model - this is from a system running vllm/Qwen...
 
 ```json
 "agents": {
