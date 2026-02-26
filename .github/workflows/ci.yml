@@ -37,17 +37,18 @@ jobs:
 
   # ------------------------------------------------------------------
   # Live tests — run on the Spark (self-hosted runner)
+  # Uncomment when a self-hosted runner is registered on the Spark.
   # ------------------------------------------------------------------
-  live:
-    name: Live tests (Spark)
-    runs-on: self-hosted
-    if: github.event_name == 'push'
-    needs: structural
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run security tests
-        run: python3 tests/test_security.py -v
-
-      - name: Run vLLM smoke tests
-        run: python3 tests/test_vllm.py -v
+  # live:
+  #   name: Live tests (Spark)
+  #   runs-on: self-hosted
+  #   if: github.event_name == 'push'
+  #   needs: structural
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Run security tests
+  #       run: python3 tests/test_security.py -v
+  #
+  #     - name: Run vLLM smoke tests
+  #       run: python3 tests/test_vllm.py -v
