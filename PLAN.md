@@ -196,12 +196,12 @@ and shell. The primary risks are:
 | Model API isolation | Port 8000 not published to host | ✅ Done | `qwen3-coder-next/docker-compose.yml` |
 | Filesystem isolation | Only `~/code/spark-ai-agents` mounted at `/home/node/agents` | ✅ Done | `openclaw/docker-compose.yml` |
 | Container user | Runs as `node` uid 1000, non-root | ✅ Done | OpenClaw default; do not override |
-| LAN lateral movement | iptables DOCKER-USER drop rule | ⬜ TODO — verify in place | Manual step; see README |
-| Tailscale lateral movement | iptables DOCKER-USER drop rule | ⬜ TODO — verify in place | Manual step; see README |
-| Outbound SSH | iptables TCP/22 drop rule | ⬜ TODO — verify in place | Manual step; see README |
-| Shell/exec tool | Disable via `tools.deny` in openclaw.json | ⚠️ TODO — not configured; risky before Phase 4 | openclaw.json |
-| Agent sandboxing | Enable sandbox in openclaw.json | ⚠️ TODO — off by default; risky before Phase 4 | openclaw.json |
-| Config writes | `configWrites: false` per channel; `commands.config: false` | ⬜ TODO — low risk but agent can disrupt itself | openclaw.json |
+| LAN lateral movement | iptables DOCKER-USER drop rule | ✅ Done | Manual step; see README |
+| Tailscale lateral movement | iptables DOCKER-USER drop rule | ✅ Done | Manual step; see README |
+| Outbound SSH | iptables TCP/22 drop rule | ✅ Done | Manual step; see README |
+| Shell/exec tool | Disable via `tools.deny` in openclaw.json | ✅ Done | openclaw.json |
+| Agent sandboxing | Enable sandbox in openclaw.json | ✅ Done | openclaw.json |
+| Config writes | `configWrites: false` per channel; `commands.config: false` | ✅ Done | openclaw.json |
 | Slack access | DM-only pairing; Tailscale-only port | ✅ Done | openclaw.json |
 | SSH backstop | Removed MacBook authorized_keys | ✅ Done | — |
 | Credential hygiene | `read -s` for tokens; temp script for HF download | ✅ Done | README pattern |
@@ -273,9 +273,9 @@ By design and enforcement:
 - [x] Connect Slack — main agent (DMs) and chattpc26 agent (channel C09KGGMS116)
 - [x] Harden MacBook SSH — removed `authorized_keys` (done in Phase 2)
 - [ ] Apply iptables rules; verify in place (`sudo iptables -L DOCKER-USER -n | grep DROP`)
-- [ ] Disable exec/shell tools via `tools.deny` in openclaw.json ⚠️ risky gap
-- [ ] Enable agent sandboxing in openclaw.json ⚠️ risky gap — must be done before Phase 4
-- [ ] Set `configWrites: false` and `commands.config: false` to prevent agents editing gateway config
+- [x] Disable exec/shell tools via `tools.deny` in openclaw.json
+- [x] Enable agent sandboxing in openclaw.json
+- [x] Set `configWrites: false` and `commands.config: false` to prevent agents editing gateway config
 - [ ] Verify all security checks pass (see TROUBLESHOOT.md)
 
 ### Phase 4 — Connect Data Sources
