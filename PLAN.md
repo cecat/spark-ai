@@ -59,17 +59,18 @@ spark-ai/
 | qwen3-coder-next compose | ✅ Running | Verified startup; API serving on Docker-internal port 8000 |
 | qwen3-coder-next .env | ✅ Created | `HF_HUB_OFFLINE=0` — flip to `1` after confirming model is cached |
 | vLLM smoke test | ✅ Verified | Prompt/response confirmed via Docker network test container |
-| openclaw compose | ✅ Ready | `.env` created with `TAILSCALE_IP` and `OPENCLAW_WORKSPACE` |
-| openclaw-workspace | ✅ Created | `~/openclaw-workspace/` exists on host |
+| openclaw compose | ✅ Running | Gateway up; Tailscale-only; connected to vLLM |
+| openclaw-workspace | ✅ Created | `~/code/spark-ai-agents/` — multi-agent private repo |
 | Tests directory | ✅ Created | `tests/` with vLLM, OpenClaw, and security tests; CI workflow in `.github/` |
-| OpenClaw onboarding | ⬜ Not started | Run after test scaffolding is in place |
+| OpenClaw onboarding | ✅ Done | main + chattpc26 agents configured |
+| Slack bot | ✅ Done | ChatCeC app; main agent handles DMs; chattpc26 handles TPC channel |
+| iptables rules | ✅ Done | 3 DROP rules in place; saved via iptables-persistent |
+| Security hardening | ✅ Done | tools.deny, sandbox, configWrites all configured |
 | Telegram channel | ⬜ Not started | Need @BotFather token |
 | Google credentials | ⬜ Not started | Dedicated agent Google account needed |
-| Slack bot | ⬜ Not started | Minimal-scope bot token needed |
-| iptables rules | ⬜ Not started | Run after containers are up |
 | MacBook SSH hardening | ✅ Done | Removed authorized_keys (no passwordless SSH into Mac needed) |
 
-**Next action:** Proceed to OpenClaw onboarding (Phase 3).
+**Next action:** Phase 4 — connect Google Sheets data source.
 
 ---
 
