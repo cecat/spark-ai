@@ -72,6 +72,8 @@ Go to **Install App → Install to Workspace**, approve, and copy the `xoxb-...`
 
 ## Step 7: Configure OpenClaw
 
+In this step you'll use the **App token** you got from step 2 (xapp-...) and the **Bot token** you got from step 6 (xoxb-...).
+
 ### openclaw.json — channels section
 
 ```json
@@ -102,7 +104,7 @@ Go to **Install App → Install to Workspace**, approve, and copy the `xoxb-...`
 
 > Note: `webhookPath` is documented as HTTP mode only, but the config validator may require it even in Socket Mode. Leave it as `/slack/events`.
 
-> Note: `groupPolicy: "allowlist"` requires every channel the bot should respond in to be listed under `channels`. An empty allowlist means the bot responds nowhere.
+> Note: `groupPolicy: "allowlist"` requires every channel the bot should respond in to be listed under `channels`. An empty allowlist means the bot responds nowhere (kinda pointless).
 
 ### openclaw.json — agents and bindings section
 
