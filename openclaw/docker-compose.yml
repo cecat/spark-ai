@@ -21,12 +21,21 @@ services:
     ports:
       # IMPORTANT: bind to Tailscale IP only — not 0.0.0.0
       - "${TAILSCALE_IP}:18789:18789"
+    group_add:
+      - "988"
     volumes:
       # OpenClaw config and memory — internal use only
       - openclaw-config:/home/node/.openclaw
       # Workspace — the ONLY host folder the agent can read/write
-      # Do NOT replace ~/openclaw-workspace with ~/ or any broader path
-      - ${OPENCLAW_WORKSPACE}:/home/node/agents:rw  
+      - ${OPENCLAW_WORKSPACE}:/home/node/agents:rw
+      # Docker to fire up sandoxes
+      - /usr/bin/docker:/usr/bin/docker:ro
+      # Docker socket — required for sandbox container spawning
+      - /var/run/docker.sock:/var/run/docker.sock
+      # gog credentials — read-only, for Google Workspace access
+      - /home/catlett/.config/gogcli:/home/catlett/.config/gogcli:ro
+      # gog skills
+      - /home/catlett/.agents:/home/node/.agents:ro
     environment:
       - NODE_ENV=production
       - OPENAI_API_BASE=http://nim:8000/v1
