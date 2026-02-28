@@ -10,7 +10,7 @@ NVIDIA DGX Spark. There are two agents:
 - **chattpc26** — handles TPC Slack channels (#tpc-openclaw, #openclaw-test). Has sandbox
   exec with gog for Google Workspace access. Queues email requests AND sends approved ones.
 
-Google account: `chattpc26@gmail.com`
+Google account: `tpc26agent@gmail.com`
 gog is installed, authenticated for contacts/docs/drive/gmail/sheets, and working via
 sandbox exec on chattpc26. See `GOG-SANDBOX-PLAN.md` for sandbox configuration.
 
@@ -22,7 +22,7 @@ chattpc26 **never sends email without approval**. It writes JSON files to a shar
 main reads the outbox (triggered by cron → Slack DM), screens each message, and writes an
 approval or rejection. chattpc26 then sends approved emails via `gog gmail send`.
 
-Recipients are restricted to the chattpc26@gmail.com Google Contacts list. This is managed
+Recipients are restricted to the tpc26agent@gmail.com Google Contacts list. This is managed
 by the human operator (Charlie), not by the agents. Both agents check contacts before
 queuing or sending — if the recipient isn't in contacts, the email is rejected.
 
@@ -41,16 +41,16 @@ approve files — it cannot directly send email or run arbitrary commands.
 
 ## Contacts Allowlist
 
-The chattpc26@gmail.com Google Contacts list serves as a hard recipient allowlist.
+The tpc26agent@gmail.com Google Contacts list serves as a hard recipient allowlist.
 
 **Management:** Charlie manages contacts by hand via the Google Contacts web UI
-(contacts.google.com signed in as chattpc26@gmail.com) or via `gog contacts create`
+(contacts.google.com signed in as tpc26agent@gmail.com) or via `gog contacts create`
 on the Spark host. Agents do NOT add, modify, or delete contacts.
 
 **Enforcement:** Before queuing (chattpc26) or approving (main), check that the recipient
 exists in contacts:
 ```bash
-gog contacts search "recipient@example.com" --account chattpc26@gmail.com --plain
+gog contacts search "recipient@example.com" --account tpc26agent@gmail.com --plain
 ```
 If no result is returned, reject the email. This is a hard rule — never override.
 
@@ -94,7 +94,7 @@ moves to `shared/sent/` with `"sent_at"` added.
 
 The token has been re-authorized with all needed scopes:
 ```
-chattpc26@gmail.com  default  contacts,docs,drive,gmail,sheets  oauth
+tpc26agent@gmail.com  default  contacts,docs,drive,gmail,sheets  oauth
 ```
 
 The Gmail API is enabled in the TPC26-Forms-Triage Google Cloud project.
@@ -103,7 +103,7 @@ The People (Contacts) API must also be enabled — same one-click toggle in the 
 Verified working:
 ```bash
 GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=sparkagent2026 \
-  gog gmail search "newer_than:1d" --account chattpc26@gmail.com --plain
+  gog gmail search "newer_than:1d" --account tpc26agent@gmail.com --plain
 ```
 
 ---
@@ -116,7 +116,7 @@ Enable "People API" (used by `gog contacts`). This is a one-click toggle.
 Verify:
 ```bash
 GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=sparkagent2026 \
-  gog contacts list --account chattpc26@gmail.com --plain
+  gog contacts list --account tpc26agent@gmail.com --plain
 ```
 
 ---
@@ -234,7 +234,7 @@ You queue email requests and send approved emails. You never send email without 
 ## Contacts Allowlist (HARD RULE — CHECK BEFORE QUEUING)
 Before writing any email to the outbox, verify the recipient is in Google Contacts:
 ```
-gog contacts search "recipient@example.com" --account chattpc26@gmail.com --plain
+gog contacts search "recipient@example.com" --account tpc26agent@gmail.com --plain
 ```
 If no result is returned, do NOT queue the email. Inform the user that the recipient
 is not in the approved contacts list and ask them to add the contact first.
@@ -259,7 +259,7 @@ For each approved file:
 1. Verify recipient is still in contacts (re-check).
 2. Send:
 ```
-gog gmail send --account chattpc26@gmail.com --to <to> --subject "<subject>" --body "<body>" --force --no-input
+gog gmail send --account tpc26agent@gmail.com --to <to> --subject "<subject>" --body "<body>" --force --no-input
 ```
 3. Update the JSON: add "sent_at" with current timestamp, set "status" to "sent".
 4. Move the file to /home/node/agents/shared/sent/
@@ -280,34 +280,58 @@ gog gmail send --account chattpc26@gmail.com --to <to> --subject "<subject>" --b
 
 ---
 
-## Step 7 — Set Up Cron Trigger for Outbox Checking
+## Step 7 — Hybrid Scheduling: Heartbeat + Cron
 
-OpenClaw agents don't have cron. A host cron job sends a Slack DM to main as a trigger.
+The email flow uses two scheduling mechanisms, each chosen for what it does best:
 
-On the Spark, create a script and cron entry:
+### Approval: OpenClaw Heartbeat (main agent)
 
-```bash
-# Create the trigger script
-cat > ~/code/spark-ai-agents/scripts/check-outbox-trigger.sh << 'EOF'
-#!/bin/bash
-# Sends a Slack DM to main agent to trigger outbox processing.
-# Called by cron. Requires SLACK_BOT_TOKEN in environment.
-curl -s -X POST https://slack.com/api/chat.postMessage \
-  -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"channel": "<MAIN_DM_CHANNEL_ID>", "text": "Check the email outbox and process any pending requests."}' \
-  > /dev/null
-EOF
-chmod +x ~/code/spark-ai-agents/scripts/check-outbox-trigger.sh
+The main agent's heartbeat wakes it every hour to review the outbox. This requires
+LLM judgment (screening content, checking rate limits, recognizing contacts), so it
+uses OpenClaw's native heartbeat mechanism.
+
+**openclaw.json** — added to main agent config:
+```json
+"heartbeat": {
+  "every": "1h",
+  "activeHours": {
+    "start": "08:00",
+    "end": "22:00",
+    "timezone": "America/Chicago"
+  }
+}
 ```
 
-Add to crontab (`crontab -e`):
-```
-0 * * * * SLACK_BOT_TOKEN=xoxb-... /home/catlett/code/spark-ai-agents/scripts/check-outbox-trigger.sh
-```
+**HEARTBEAT.md** — created in main's workspace (`~/code/spark-ai-agents/main/HEARTBEAT.md`):
+- Check `shared/outbox/` for pending .json files
+- Apply screening rules from EMAIL.md
+- Approve or reject each file
+- Reply HEARTBEAT_OK if nothing pending
 
-Note: The bot token and DM channel ID need to be filled in during implementation.
-The DM channel ID can be found via `gog` or the Slack API after the bot has DM'd you.
+Heartbeats are skipped outside active hours (before 8am / after 10pm Central).
+Since vLLM runs locally, there is no token cost — only GPU compute time.
+
+### Sending: Host Cron Script
+
+Sending approved emails is purely mechanical: check status, verify contacts, run
+`gog gmail send`. No LLM judgment needed. A bash script does this more reliably
+and cheaply than an agent.
+
+**Script:** `~/code/spark-ai-agents/scripts/send-approved-emails.sh`
+- Scans `shared/outbox/` for files with `"status": "approved"`
+- Verifies recipient is in Google Contacts (hard check)
+- Runs `gog gmail send` for each
+- Updates JSON with `"sent_at"` and moves to `shared/sent/`
+- Rejects to `shared/rejected/` if contact check fails at send time
+- Logs all actions to `shared/send-email.log`
+
+**Crontab:** `*/30 * * * *` (every 30 minutes)
+
+### Why hybrid?
+- **Heartbeat for approval** — needs LLM judgment (content screening, context)
+- **Cron for sending** — deterministic, no LLM needed, more reliable
+- **Decoupled** — approval and sending happen independently; cron works even if
+  the gateway is temporarily down
 
 ---
 
@@ -316,7 +340,7 @@ The DM channel ID can be found via `gog` or the Slack API after the bot has DM'd
 Re-auth with contacts scope added:
 ```bash
 GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=sparkagent2026 \
-  gog auth add chattpc26@gmail.com --services drive,sheets,docs,gmail,contacts \
+  gog auth add tpc26agent@gmail.com --services drive,sheets,docs,gmail,contacts \
   --manual --force-consent
 ```
 
@@ -325,7 +349,7 @@ Enable the People API in Google Cloud Console (TPC26-Forms-Triage project).
 Verify:
 ```bash
 GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=sparkagent2026 \
-  gog contacts list --account chattpc26@gmail.com --plain
+  gog contacts list --account tpc26agent@gmail.com --plain
 ```
 
 Restart gateway after re-auth:
@@ -339,18 +363,19 @@ cd ~/code/spark-ai/openclaw && docker compose restart openclaw-gateway
 
 ```bash
 # 1. Verify gmail works from sandbox (ask chattpc26 in Slack):
-#    "run: gog gmail search newer_than:1d --account chattpc26@gmail.com --plain"
+#    "run: gog gmail search newer_than:1d --account tpc26agent@gmail.com --plain"
 
 # 2. Verify contacts works from sandbox:
-#    "run: gog contacts list --account chattpc26@gmail.com --plain"
+#    "run: gog contacts list --account tpc26agent@gmail.com --plain"
 
 # 3. End-to-end test:
-#    a. Add a test contact (yourself) to chattpc26@gmail.com contacts
-#    b. Manually write a test JSON to shared/outbox/
-#    c. DM main: "check the email outbox"
-#    d. Verify main approves (or rejects with reason)
-#    e. Ask chattpc26: "check the outbox for approved emails and send them"
+#    a. Add a test contact (yourself) to tpc26agent@gmail.com contacts
+#    b. Manually write a test JSON to shared/outbox/ with status: "pending"
+#    c. Wait for main's heartbeat (or DM main: "check the email outbox")
+#    d. Verify main approves (check file status changed to "approved")
+#    e. Wait for cron (or run: ~/code/spark-ai-agents/scripts/send-approved-emails.sh)
 #    f. Verify email arrives and file moves to shared/sent/
+#    g. Check shared/send-email.log for the send record
 ```
 
 ---
@@ -363,14 +388,13 @@ cd ~/code/spark-ai/openclaw && docker compose restart openclaw-gateway
 - **Contacts as allowlist.** Recipients must be in Google Contacts, managed by the
   human operator. Even if both agents are compromised, they can only email addresses
   that Charlie has explicitly approved.
-- **Two-agent separation.** chattpc26 can queue and send, but only with approval.
-  main can approve, but cannot send. Neither agent alone completes the email flow
-  (except that chattpc26 technically has the exec to bypass — this is mitigated by
-  instruction-level controls and the contacts allowlist).
-- **Atomic file writes.** Temp-file-then-rename prevents race conditions between agents.
-- **Honest limitation:** The separation is instruction-based, not system-enforced.
+- **Two-layer sending.** main approves via heartbeat (LLM judgment), cron script sends
+  (mechanical). The cron script also re-checks the contacts allowlist at send time.
+- **Atomic file writes.** Temp-file-then-rename prevents race conditions.
+- **Honest limitation:** The agent separation is instruction-based, not system-enforced.
   chattpc26 has sandbox exec and could in theory bypass the outbox and send directly.
   The contacts allowlist is the hard backstop — even a rogue chattpc26 can only reach
   addresses in the contacts list.
-- **Cron trigger.** The hourly DM is a simple, auditable mechanism. No host exec needed
-  for main, no OpenClaw scheduling magic required.
+- **Cron is independent.** The send script runs on the host, not inside OpenClaw.
+  It works even if the gateway is restarting, and its log (`shared/send-email.log`)
+  provides an auditable record of all sent and rejected emails.
