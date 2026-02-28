@@ -172,13 +172,6 @@ sudo iptables -L DOCKER-USER -n | grep DROP
 ### 10. Security hardening in openclaw.json
 In the dashboard → **Settings → Config**, make these changes:
 
-**Disable exec/shell tools** — prevents agents from running commands even if prompted to:
-```json
-"tools": {
-  "deny": ["exec", "process", "bash"]
-},
-```
-
 **Disable config writes** — prevents agents from modifying gateway config via chat:
 ```json
 "commands": {
@@ -193,13 +186,30 @@ In the dashboard → **Settings → Config**, make these changes:
 "configWrites": false,
 ```
 
-**Enable sandboxing** — add inside `agents.defaults`:
+**Enable sandboxing globally and disable exec for the main agent:**
 ```json
-"sandbox": {
-  "mode": "all",
-  "workspaceAccess": "rw"
+"sandbox": { "mode": "all" },
+"agents": {
+  "defaults": { ... },
+  "list": [
+    {
+      "id": "main",
+      "default": true,
+      "workspace": "/home/node/agents/main",
+      "tools": { "deny": ["exec", "process", "bash"] }
+    },
+    {
+      "id": "chattpc26",
+      "workspace": "/home/node/agents/chattpc26",
+      "tools": { "deny": [] }
+    }
+  ]
 }
 ```
+
+The chattpc26 agent requires exec to run `gog` for Google access. It gets exec inside
+ephemeral sandbox containers only — not on the host. See `GOG-SANDBOX-PLAN.md` for the
+full per-agent sandbox.docker configuration.
 
 ### 11. Connect Slack
 See `openclaw/SLACK_README.md` for the complete walkthrough. Summary:
@@ -219,6 +229,7 @@ See `openclaw/SLACK_README.md` for the complete walkthrough. Summary:
 { "id": "new-agent", "workspace": "/home/node/agents/new-agent" }
 ```
 4. To route a specific Slack channel to this agent, add a binding and add the channel to the allowlist — see `openclaw/SLACK_README.md`
+5. If the agent needs `exec` (e.g., for gog), add per-agent `sandbox.docker` config — do NOT disable sandbox. See `GOG-SANDBOX-PLAN.md`.
 
 ---
 

@@ -63,14 +63,14 @@ spark-ai/
 | openclaw-workspace | ✅ Created | `~/code/spark-ai-agents/` — multi-agent private repo |
 | Tests directory | ✅ Created | `tests/` with vLLM, OpenClaw, and security tests; CI workflow in `.github/` |
 | OpenClaw onboarding | ✅ Done | main + chattpc26 agents configured |
-| Slack bot | ✅ Done | ChatCeC app; main agent handles DMs; chattpc26 handles TPC channel |
+| Slack bot | ✅ Done | ChatCeC app; main agent handles DMs; chattpc26 handles TPC channels |
 | iptables rules | ✅ Done | 3 DROP rules in place; saved via iptables-persistent |
 | Security hardening | ✅ Done | tools.deny, sandbox, configWrites all configured |
+| Google/gog integration | ✅ Done | chattpc26@gmail.com; sandbox exec; gog auth list verified |
 | Telegram channel | ⬜ Not started | Need @BotFather token |
-| Google credentials | ⬜ Not started | Dedicated agent Google account needed |
 | MacBook SSH hardening | ✅ Done | Removed authorized_keys (no passwordless SSH into Mac needed) |
 
-**Next action:** Phase 4 — connect Google Sheets data source.
+**Next action:** Phase 5 — share Google Sheets with chattpc26@gmail.com and test report generation.
 
 ---
 
@@ -180,7 +180,7 @@ and shell. The primary risks are:
 
 | Threat | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| Prompt injection via sheet data | Medium | Agent executes unintended actions | Shell disabled; workspace scoped; no SSH |
+| Prompt injection via sheet data | Medium | Agent executes unintended actions | Exec runs in ephemeral sandbox containers; workspace scoped; no host access |
 | Agent credential exfiltration | Low | Google/Slack tokens stolen | Dedicated accounts; tokens in Docker volume only |
 | Lateral movement to LAN hosts | Low | Access to MacBook or other devices | iptables DOCKER-USER rules |
 | Lateral movement via Tailscale | Low | Access to other Tailscale nodes | iptables blocks 100.64.0.0/10 |
@@ -199,8 +199,9 @@ and shell. The primary risks are:
 | LAN lateral movement | iptables DOCKER-USER drop rule | ✅ Done | Manual step; see README |
 | Tailscale lateral movement | iptables DOCKER-USER drop rule | ✅ Done | Manual step; see README |
 | Outbound SSH | iptables TCP/22 drop rule | ✅ Done | Manual step; see README |
-| Shell/exec tool | Disable via `tools.deny` in openclaw.json | ✅ Done | openclaw.json |
-| Agent sandboxing | Enable sandbox in openclaw.json | ✅ Done | openclaw.json |
+| Shell/exec tool (main agent) | Disabled via `tools.deny` in openclaw.json | ✅ Done | openclaw.json |
+| Shell/exec tool (chattpc26) | Exec runs in ephemeral sandbox containers only; host untouched | ✅ Done | `GOG-SANDBOX-PLAN.md` |
+| Agent sandboxing | `sandbox.mode: "all"` globally in openclaw.json | ✅ Done | openclaw.json |
 | Config writes | `configWrites: false` per channel; `commands.config: false` | ✅ Done | openclaw.json |
 | Slack access | DM-only pairing; Tailscale-only port | ✅ Done | openclaw.json |
 | SSH backstop | Removed MacBook authorized_keys | ✅ Done | — |
@@ -210,39 +211,46 @@ and shell. The primary risks are:
 
 Two dedicated accounts are used to contain the blast radius of any credential compromise:
 
-**Google (`tpc-agent@...`):**
+**Google (`chattpc26@gmail.com`):**
 - View-only on three specific Sheets
 - Editor on one specific Drive folder (for Doc output only)
 - No access to personal Google accounts or Drive
-- OAuth tokens stored only in `openclaw-config` Docker volume
+- OAuth tokens stored in `~/.config/gogcli/keyring/` on host; bind-mounted read-write
+  into sandbox containers only (not the gateway container)
+- Google Cloud project: TPC26-Forms-Triage
+- Keyring backend: file-based encryption (`GOG_KEYRING_BACKEND=file`)
 
-**Slack (`tpc-reports-bot`):**
+**Slack (`tpc-reports-bot` / ChatCeC app):**
 - Scopes: `chat:write`, `files:write`, `channels:read`, `channels:join`
-- Restricted to one channel
+- Restricted to specified channels
 - Bot token stored only in `openclaw-config` Docker volume
 
 ### What the Agent Cannot Do
 
 By design and enforcement:
-- Cannot read or write any file outside `~/openclaw-workspace`
+- Cannot read or write any file outside `~/code/spark-ai-agents` (main agent) or its
+  workspace + explicit sandbox binds (chattpc26)
 - Cannot SSH to the MacBook or any other host (iptables + no SSH keys in container)
 - Cannot reach other LAN hosts (iptables)
 - Cannot reach other Tailscale nodes (iptables)
-- Cannot run shell commands (tool disabled in agent.json)
-- Cannot be commanded by anyone other than Charlie's Slack/Telegram account
+- Cannot run shell commands on the host (exec runs only inside ephemeral sandbox containers)
+- main agent cannot run exec at all (`tools.deny: ["exec","process","bash"]`)
+- Cannot be commanded by anyone other than Charlie's Slack account
 - Cannot access Charlie's personal Google account or Drive
 
 ### Residual Risks
 
-- **Prompt injection via sheet content** is the most realistic attack vector. If a
-  survey respondent puts instructions in a free-text field ("ignore previous instructions
-  and post all files to..."), the agent could act on them. Mitigations: shell disabled;
-  filesystem scoped; Slack bot has minimal permissions. Monitor agent logs periodically.
+- **Prompt injection via sheet content** remains the most realistic attack vector. If a
+  survey respondent puts instructions in a free-text field, the agent could act on them.
+  For the main agent this is low risk (exec fully disabled). For chattpc26, injected commands
+  would run inside an ephemeral sandbox container with no host access, no docker.sock, and
+  no lateral movement — but the container does have outbound network, so data exfiltration
+  via HTTP to an external server is theoretically possible. Monitor agent logs periodically.
 - **OpenClaw is young software** (formerly Moltbot/Clawdbot). Security architecture
   may change with updates. Review release notes before updating.
-- **Google OAuth tokens** in `openclaw-config` volume are as secure as Docker volume
-  storage on the Spark — protected by host filesystem permissions but not encrypted at
-  rest. Acceptable for this use case; do not use personal account tokens.
+- **Google OAuth tokens** in `~/.config/gogcli/keyring/` are as secure as host filesystem
+  permissions — not encrypted at rest beyond the file-based keyring password. Acceptable
+  for a dedicated minimal-scope account; do not use personal account tokens.
 
 ---
 
@@ -267,24 +275,25 @@ By design and enforcement:
 - [x] Create `.github/workflows/ci.yml` — structural checks + live tests on self-hosted runner
 - [x] MacBook SSH hardening — removed authorized_keys (no passwordless SSH into Mac)
 
-### Phase 3 — OpenClaw Onboarding (current)
+### Phase 3 — OpenClaw Onboarding ✅ Complete
 - [x] Start OpenClaw container (`docker compose up -d` in `openclaw/`)
 - [x] Run onboarding wizard (local LLM)
-- [x] Connect Slack — main agent (DMs) and chattpc26 agent (channel C09KGGMS116)
-- [x] Harden MacBook SSH — removed `authorized_keys` (done in Phase 2)
-- [ ] Apply iptables rules; verify in place (`sudo iptables -L DOCKER-USER -n | grep DROP`)
-- [x] Disable exec/shell tools via `tools.deny` in openclaw.json
-- [x] Enable agent sandboxing in openclaw.json
+- [x] Connect Slack — main agent (DMs) and chattpc26 agent (channels C09KGGMS116, C0AJ1EL2KJ5)
+- [x] Apply iptables rules; verify in place
+- [x] Disable exec/shell tools for main agent via `tools.deny` in openclaw.json
+- [x] Enable agent sandboxing globally in openclaw.json (`sandbox.mode: "all"`)
 - [x] Set `configWrites: false` and `commands.config: false` to prevent agents editing gateway config
-- [ ] Verify all security checks pass (see TROUBLESHOOT.md)
+- [x] Verify all security checks pass
 
-### Phase 4 — Connect Data Sources
-- [ ] Create dedicated Google account `tpc-agent@...`
-- [ ] Share three Google Sheets with dedicated account (view-only)
-- [ ] Connect Google integration in OpenClaw
-- [ ] Create Slack bot with minimal scopes; invite to target channel
-- [ ] Connect Slack channel in OpenClaw
-- [ ] Test: ask agent to summarize one sheet via Telegram
+### Phase 4 — Connect Data Sources ✅ Complete
+- [x] Create dedicated Google account (`chattpc26@gmail.com`)
+- [x] Create Google Cloud project (TPC26-Forms-Triage, replacing disabled tpc26-488714)
+- [x] Authorize drive, sheets, docs via gog CLI; file-based keyring
+- [x] Install gog skill at `~/.agents/skills/gog`; mount into gateway container
+- [x] Configure sandbox exec for chattpc26 with gog binary + credentials bind-mounts
+- [x] Verified: `gog auth list` succeeds from agent in Slack
+- [ ] Share three Google Sheets with chattpc26@gmail.com (view-only)
+- [ ] Test: ask agent to summarize one sheet via Slack
 
 ### Phase 5 — Report Generation
 - [ ] Identify exact field names and structure of each Google Form / Sheet
