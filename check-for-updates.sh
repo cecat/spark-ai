@@ -25,12 +25,16 @@ fi
 echo ""
 echo "=== Qwen3-Coder-Next-FP8 ==="
 python3 -c "
+from datetime import datetime, timezone
 from huggingface_hub import repo_info, scan_cache_dir
 
 repo = 'Qwen/Qwen3-Coder-Next-FP8'
 info = repo_info(repo)
 remote_sha = info.sha
-print(f'Remote commit:  {remote_sha[:12]}  ({info.last_modified.strftime(\"%Y-%m-%d\")})')
+remote_date = info.last_modified
+if isinstance(remote_date, (int, float)):
+    remote_date = datetime.fromtimestamp(remote_date, tz=timezone.utc)
+print(f'Remote commit:  {remote_sha[:12]}  ({remote_date.strftime(\"%Y-%m-%d\")})')  
 
 cache = scan_cache_dir()
 found = False
@@ -38,8 +42,11 @@ for r in cache.repos:
     if 'Qwen3-Coder-Next-FP8' in r.repo_id:
         found = True
         local_shas = {rev.commit_hash for rev in r.revisions}
-        local_latest = sorted(r.revisions, key=lambda v: v.last_modified, reverse=True)[0]
-        print(f'Local commit:   {local_latest.commit_hash[:12]}  (downloaded {local_latest.last_modified.strftime(\"%Y-%m-%d\")})')  
+        local_latest = sorted(r.revisions, key=lambda v: v.last_modified if isinstance(v.last_modified, float) else v.last_modified.timestamp(), reverse=True)[0]
+        lm = local_latest.last_modified
+        if isinstance(lm, (int, float)):
+            lm = datetime.fromtimestamp(lm, tz=timezone.utc)
+        print(f'Local commit:   {local_latest.commit_hash[:12]}  (downloaded {lm.strftime(\"%Y-%m-%d\")})')  
         print(f'Local size:     {r.size_on_disk_str}')  
         if remote_sha in local_shas:
             print('Model is up to date.')
