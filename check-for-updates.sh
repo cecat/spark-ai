@@ -5,9 +5,10 @@
 set -uo pipefail
 
 echo "=== OpenClaw ==="
-echo "Pulling latest image..."
-pull_output=$(docker pull ghcr.io/openclaw/openclaw:latest 2>&1)
-echo "$pull_output"
+echo "Pulling latest image (may take 30-60s to check layers)..."
+docker pull ghcr.io/openclaw/openclaw:latest 2>&1 | tee /tmp/.openclaw-pull-output
+pull_output=$(cat /tmp/.openclaw-pull-output)
+rm -f /tmp/.openclaw-pull-output
 
 if echo "$pull_output" | grep -q "Downloaded newer image"; then
     echo ""
