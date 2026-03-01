@@ -28,6 +28,7 @@ services:
       - openclaw-config:/home/node/.openclaw
       # Workspace — the ONLY host folder the agent can read/write
       - ${OPENCLAW_WORKSPACE}:/home/node/agents:rw
+      - ${OPENCLAW_WORKSPACE}:${OPENCLAW_WORKSPACE}:rw
       # Docker to fire up sandoxes
       - /usr/bin/docker:/usr/bin/docker:ro
       # Docker socket — required for sandbox container spawning
