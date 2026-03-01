@@ -25,15 +25,28 @@ echo ""
 echo "=== Qwen3-Coder-Next-FP8 ==="
 python3 -c "
 from huggingface_hub import repo_info, scan_cache_dir
-info = repo_info('Qwen/Qwen3-Coder-Next-FP8')
-print(f'Remote last modified: {info.last_modified}')
+
+repo = 'Qwen/Qwen3-Coder-Next-FP8'
+info = repo_info(repo)
+remote_sha = info.sha
+print(f'Remote commit:  {remote_sha[:12]}  ({info.last_modified.strftime(\"%Y-%m-%d\")})')
+
 cache = scan_cache_dir()
 found = False
 for r in cache.repos:
     if 'Qwen3-Coder-Next-FP8' in r.repo_id:
         found = True
-        print(f'Local last accessed:  {r.last_accessed}')
-        print(f'Local size:           {r.size_on_disk_str}')
+        local_shas = {rev.commit_hash for rev in r.revisions}
+        local_latest = sorted(r.revisions, key=lambda v: v.last_modified, reverse=True)[0]
+        print(f'Local commit:   {local_latest.commit_hash[:12]}  (downloaded {local_latest.last_modified.strftime(\"%Y-%m-%d\")})')  
+        print(f'Local size:     {r.size_on_disk_str}')  
+        if remote_sha in local_shas:
+            print('Model is up to date.')
+        else:
+            print(f'*** Remote has a newer commit. Check https://huggingface.co/{repo}/commits/main')
+            print('    (May be just a README change — review before re-downloading.)')
+        break
+
 if not found:
     print('Model not found in local cache!')
 "
