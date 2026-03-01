@@ -156,9 +156,9 @@ You screen them and mark each as approved or rejected. You do NOT send email you
 chattpc26 sends approved emails.
 
 ## Outbox Location
-Shared outbox: /home/node/agents/shared/outbox/
-Sent archive:  /home/node/agents/shared/sent/
-Rejected:      /home/node/agents/shared/rejected/
+Shared outbox: /workspace/shared/outbox/
+Sent archive:  /workspace/shared/sent/
+Rejected:      /workspace/shared/rejected/
 
 ## When to Check
 You will receive a Slack DM reminder to check the outbox. When you receive it, process
@@ -175,7 +175,7 @@ Update the JSON file:
 - Set "status" to "rejected"
 - Add "rejected_at" with the current ISO 8601 timestamp
 - Add "rejected_reason" with a clear explanation
-Move the file to /home/node/agents/shared/rejected/
+Move the file to /workspace/shared/rejected/
 
 ## Contacts Allowlist (HARD RULE)
 You do not have exec access and cannot check contacts directly. However, if the "to"
@@ -229,9 +229,9 @@ Create `~/code/spark-ai-agents/chattpc26/EMAIL.md`:
 You queue email requests and send approved emails. You never send email without approval.
 
 ## Outbox Location
-/home/node/agents/shared/outbox/
-/home/node/agents/shared/sent/
-/home/node/agents/shared/rejected/
+/workspace/shared/outbox/
+/workspace/shared/sent/
+/workspace/shared/rejected/
 
 ## Contacts Allowlist (HARD RULE — CHECK BEFORE QUEUING)
 Before writing any email to the outbox, verify the recipient is in Google Contacts:
@@ -264,7 +264,7 @@ For each approved file:
 gog gmail send --account tpc26agent@gmail.com --to <to> --subject "<subject>" --body "<body>" --force --no-input
 ```
 3. Update the JSON: add "sent_at" with current timestamp, set "status" to "sent".
-4. Move the file to /home/node/agents/shared/sent/
+4. Move the file to /workspace/shared/sent/
 
 ## Standards — Follow These When Composing
 - Professional and respectful tone. You represent TPC.
