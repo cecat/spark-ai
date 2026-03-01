@@ -102,9 +102,11 @@ The People (Contacts) API must also be enabled — same one-click toggle in the 
 
 Verified working:
 ```bash
-GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=sparkagent2026 \
+GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=$(cat ~/.config/gogcli/.gog_pw) \
   gog gmail search "newer_than:1d" --account tpc26agent@gmail.com --plain
 ```
+> Note: Inside sandbox containers, use the `gog` wrapper (which reads the password
+> from file automatically). The above syntax is for host-side testing only.
 
 ---
 
@@ -115,7 +117,7 @@ Enable "People API" (used by `gog contacts`). This is a one-click toggle.
 
 Verify:
 ```bash
-GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=sparkagent2026 \
+GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=$(cat ~/.config/gogcli/.gog_pw) \
   gog contacts list --account tpc26agent@gmail.com --plain
 ```
 
@@ -339,7 +341,7 @@ and cheaply than an agent.
 
 Re-auth with contacts scope added:
 ```bash
-GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=sparkagent2026 \
+GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=$(cat ~/.config/gogcli/.gog_pw) \
   gog auth add tpc26agent@gmail.com --services drive,sheets,docs,gmail,contacts \
   --manual --force-consent
 ```
@@ -348,7 +350,7 @@ Enable the People API in Google Cloud Console (TPC26-Forms-Triage project).
 
 Verify:
 ```bash
-GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=sparkagent2026 \
+GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=$(cat ~/.config/gogcli/.gog_pw) \
   gog contacts list --account tpc26agent@gmail.com --plain
 ```
 

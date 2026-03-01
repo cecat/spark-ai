@@ -114,7 +114,7 @@ sudo chown -R 1000:1000 /var/lib/docker/volumes/openclaw_openclaw-config/_data
 cd ~/code/spark-ai/openclaw
 docker compose run --rm openclaw-cli onboard --no-install-daemon
 ```
-Key answers: provider=vLLM, base URL=`http://nim:8000/v1`, key=`sk-dummy`, model=`Qwen/Qwen3-Coder-Next-FP8`, workspace=`/home/node/agents/main`, bind=LAN, auth=Token. Save the dashboard token to a password manager.
+Key answers: provider=vLLM, base URL=`http://nim:8000/v1`, key=`sk-dummy`, model=`Qwen/Qwen3-Coder-Next-FP8`, workspace=`/home/YOUR_USER/code/spark-ai-agents/main` (**use the host path — see Step 8**), bind=LAN, auth=Token. Save the dashboard token to a password manager.
 
 ### 7. Set up Tailscale Serve for HTTPS dashboard access
 ```bash
@@ -140,12 +140,18 @@ console.log(JSON.stringify(c, null, 2));
 docker compose restart openclaw-gateway
 ```
 
-### 8. Confirm agent workspace path
-In the dashboard go to **Settings → Config** and confirm:
+### 8. Confirm agent workspace path — use host paths
+
+In the dashboard go to **Settings → Config** and confirm the workspace uses **the host path**, not the gateway-internal path:
 ```json
-"workspace": "/home/node/agents/main"
+"workspace": "/home/YOUR_USER/code/spark-ai-agents/main"
 ```
-The docker-compose.yml mounts `OPENCLAW_WORKSPACE` at `/home/node/agents`, so each agent subdirectory is accessible at `/home/node/agents/<agent-name>`.
+
+> **Why host paths?** The docker-compose mounts `OPENCLAW_WORKSPACE` at `/home/node/agents` inside the gateway container. But when OpenClaw spawns sandbox containers, it passes the workspace path directly to Docker as a bind-mount source. Docker resolves that path on the **host**, not inside the gateway. If you use `/home/node/agents/main`, Docker creates an empty, root-owned `/home/node/agents/main` directory on the host — completely separate from your real workspace. The sandbox ends up mounting an empty directory instead of your agent files.
+>
+> The fix has two parts:
+> 1. Use host paths in openclaw.json (e.g., `/home/YOUR_USER/code/spark-ai-agents/main`)
+> 2. Add a same-path mount in docker-compose.yml so the gateway can also read the workspace at the host path (already included in the docker-compose.yml in this repo — see the comment there)
 
 ### 9. Block container lateral movement
 These rules prevent the OpenClaw container from reaching your LAN, other Tailscale nodes, or SSHing out to the internet. First confirm your Docker subnet:
@@ -188,24 +194,28 @@ In the dashboard → **Settings → Config**, make these changes:
 
 **Enable sandboxing globally and disable exec for the main agent:**
 ```json
-"sandbox": { "mode": "all" },
+"sandbox": { "mode": "all", "workspaceAccess": "rw" },
 "agents": {
   "defaults": { ... },
   "list": [
     {
       "id": "main",
       "default": true,
-      "workspace": "/home/node/agents/main",
-      "tools": { "deny": ["exec", "process", "bash"] }
+      "workspace": "/home/YOUR_USER/code/spark-ai-agents/main",
+      "tools": { "deny": ["exec", "process", "bash"] },
+      "sandbox": { "mode": "all", "workspaceAccess": "rw" }
     },
     {
       "id": "chattpc26",
-      "workspace": "/home/node/agents/chattpc26",
-      "tools": { "deny": [] }
+      "workspace": "/home/YOUR_USER/code/spark-ai-agents/chattpc26",
+      "tools": { "deny": [] },
+      "sandbox": { "mode": "all", "workspaceAccess": "rw" }
     }
   ]
 }
 ```
+
+> **Important:** You must include `"workspaceAccess": "rw"` in **each agent's** `sandbox` block, not just in `agents.defaults`. Per-agent `sandbox` config completely overrides the defaults — if you omit `workspaceAccess`, the sandbox will be read-only even if the default says otherwise.
 
 The chattpc26 agent requires exec to run `gog` for Google access. It gets exec inside
 ephemeral sandbox containers only — not on the host. See `GOG-SANDBOX-PLAN.md` for the
@@ -226,10 +236,16 @@ See `openclaw/SLACK_README.md` for the complete walkthrough. Summary:
 2. Populate it with the standard markdown files (copy from `main/` as a template)
 3. In the dashboard → **Settings → Config**, add the agent to `agents.list`:
 ```json
-{ "id": "new-agent", "workspace": "/home/node/agents/new-agent" }
+{
+  "id": "new-agent",
+  "workspace": "/home/YOUR_USER/code/spark-ai-agents/new-agent",
+  "sandbox": { "mode": "all", "workspaceAccess": "rw" }
+}
 ```
+   Use the **host path** for workspace (see Step 8). Always include `workspaceAccess: "rw"` — per-agent sandbox config overrides defaults.
 4. To route a specific Slack channel to this agent, add a binding and add the channel to the allowlist — see `openclaw/SLACK_README.md`
 5. If the agent needs `exec` (e.g., for gog), add per-agent `sandbox.docker` config — do NOT disable sandbox. See `GOG-SANDBOX-PLAN.md`.
+6. After adding the agent to config, **remove any stale sandbox containers** and restart the gateway (see "Sandbox container lifecycle" below).
 
 ---
 
@@ -310,6 +326,55 @@ cd ~/code/spark-ai/openclaw && docker compose down
 cd ~/code/spark-ai/qwen3-coder-next && docker compose down && docker compose up -d
 cd ~/code/spark-ai/openclaw && docker compose up -d
 ```
+
+---
+
+## Sandbox gotchas
+
+OpenClaw runs each agent inside a Docker sandbox container. These are created and managed by the gateway, not by docker-compose. Several non-obvious behaviors can cause hours of debugging:
+
+### Sandbox container lifecycle
+
+Sandbox containers (`openclaw-sbx-agent-*`) are **not** managed by docker-compose. Running `docker compose down && docker compose up` restarts the gateway but does **not** recreate existing sandbox containers. They keep their old mounts, env vars, and config.
+
+To force-recreate sandboxes after a config change:
+```bash
+# Stop and remove stale sandbox containers
+docker stop $(docker ps -q --filter name=openclaw-sbx)
+docker rm $(docker ps -aq --filter name=openclaw-sbx)
+# Then restart the gateway
+cd ~/code/spark-ai/openclaw && docker compose restart openclaw-gateway
+```
+The gateway will create fresh sandbox containers (lazily, on first message to each agent).
+
+### Per-agent sandbox config overrides defaults entirely
+
+If an agent in `agents.list` has its own `sandbox` block, it **completely replaces** `agents.defaults.sandbox`. This means settings like `workspaceAccess: "rw"` from defaults are silently lost. Always re-declare `workspaceAccess` in each agent's sandbox config.
+
+### Environment variable security filter
+
+OpenClaw strips environment variables whose names contain security-sensitive keywords (e.g., `PASSWORD`, `SECRET`, `TOKEN`). If you set `GOG_KEYRING_PASSWORD` in `sandbox.docker.env`, the agent will never see it.
+
+**Workaround:** Use a wrapper script that reads the value from a file at runtime:
+1. Write the password to a file on the host (e.g., `~/.config/gogcli/.gog_pw`)
+2. Create a wrapper script that reads the file and exports the variable before calling the real binary
+3. Bind-mount the wrapper as the tool name and the real binary under a different name
+
+See `GOG-SANDBOX-PLAN.md` for a worked example with gog.
+
+### Shared directories between agents
+
+Each sandbox only sees its own `/workspace`. To share files between agents (e.g., an email outbox), add explicit bind mounts in the agent's `sandbox.docker.binds`:
+```json
+"sandbox": {
+  "docker": {
+    "binds": [
+      "/home/YOUR_USER/code/spark-ai-agents/shared:/workspace/shared:rw"
+    ]
+  }
+}
+```
+The left side must be the **host path**. The right side is where it appears inside the sandbox.
 
 ---
 

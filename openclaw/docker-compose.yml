@@ -28,8 +28,14 @@ services:
       - openclaw-config:/home/node/.openclaw
       # Workspace — the ONLY host folder the agent can read/write
       - ${OPENCLAW_WORKSPACE}:/home/node/agents:rw
+      # Same-path mount: OpenClaw uses the workspace path from openclaw.json as the
+      # Docker bind source when spawning sandbox containers. That path must exist on
+      # the HOST. By mounting the workspace at its own host path, the gateway can
+      # read it AND sandbox containers get the correct bind source. Without this,
+      # sandboxes would mount from /home/node/agents/* (a gateway-internal path that
+      # creates empty root-owned dirs on the host). See README.md Step 8.
       - ${OPENCLAW_WORKSPACE}:${OPENCLAW_WORKSPACE}:rw
-      # Docker to fire up sandoxes
+      # Docker binary — needed to fire up sandboxes
       - /usr/bin/docker:/usr/bin/docker:ro
       # Docker socket — required for sandbox container spawning
       - /var/run/docker.sock:/var/run/docker.sock
