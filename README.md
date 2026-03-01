@@ -33,25 +33,47 @@ The entire `spark-ai-agents/` directory is mounted into the OpenClaw container. 
 
 ```
 ~/code/
-├── spark-vllm-docker/       # eugr community vLLM build (cloned separately)
-├── spark-ai/                # this repo
+├── spark-vllm-docker/           # eugr community vLLM build (cloned separately)
+├── spark-ai/                    # this repo
+│   ├── README.md
+│   ├── TROUBLESHOOT.md
+│   ├── PLAN.md
+│   ├── check-for-updates.sh     # checks for OpenClaw + model updates
 │   ├── qwen3-coder-next/
 │   │   ├── docker-compose.yml
-│   │   └── .env             # not committed — see Step 3
+│   │   └── .env                 # not committed — see Step 3
 │   └── openclaw/
 │       ├── docker-compose.yml
 │       ├── SLACK_README.md
-│       └── .env             # not committed — see Step 3
-└── spark-ai-agents/         # private repo
-    ├── main/                # default agent workspace
+│       ├── GMAIL.md
+│       ├── GOG-SANDBOX-PLAN.md
+│       └── .env                 # not committed — see Step 3
+└── spark-ai-agents/             # private repo
+    ├── main/                    # default agent workspace
     │   ├── IDENTITY.md
     │   ├── SOUL.md
     │   ├── USER.md
     │   ├── AGENTS.md
     │   ├── TOOLS.md
-    │   └── HEARTBEAT.md
-    ├── chattpc26/           # example second agent
-    └── shared/
+    │   ├── EMAIL.md
+    │   ├── MEMORY.md
+    │   ├── HEARTBEAT.md
+    │   └── memory/              # daily memory files (auto-created by agent)
+    ├── chattpc26/               # example second agent
+    │   ├── IDENTITY.md
+    │   ├── SOUL.md
+    │   ├── USER.md
+    │   ├── AGENTS.md
+    │   ├── TOOLS.md
+    │   ├── EMAIL.md
+    │   ├── MEMORY.md
+    │   └── memory/
+    ├── scripts/
+    │   └── send-approved-emails.sh  # cron script for email sending
+    └── shared/                  # cross-agent shared files
+        ├── outbox/              # pending email JSON files
+        ├── sent/                # sent email archive
+        ├── rejected/            # rejected emails
         └── reports/
 ```
 
@@ -319,7 +341,21 @@ sudo iptables -L DOCKER-USER -n | grep DROP   # must show 3 DROP rules
 
 ---
 
-## Update vLLM image
+## Checking for updates
+
+Run the update checker on the Spark:
+```bash
+~/code/spark-ai/check-for-updates.sh
+```
+
+This checks both **OpenClaw** (pulls the latest Docker image) and **Qwen3-Coder-Next-FP8** (compares local vs. remote commit hashes on HuggingFace).
+
+- If OpenClaw has a new image, it prints restart commands (including sandbox recreation).
+- If the model has a newer commit on HF, it tells you to review the commit history — it may be just a README change, not new model weights.
+
+`docker compose up -d` does **not** check for image updates. You must `docker pull` explicitly, which this script does for you.
+
+### Update vLLM image
 ```bash
 cd ~/code/spark-vllm-docker && git pull && ./build-and-copy.sh
 cd ~/code/spark-ai/openclaw && docker compose down
