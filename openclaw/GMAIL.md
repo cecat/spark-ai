@@ -1,4 +1,5 @@
 # Gmail Integration Plan
+2026-03-02 need to update this to reflect openclaw upgrade issues and subsequent changes.
 
 ## Context
 
