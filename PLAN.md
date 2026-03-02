@@ -180,7 +180,7 @@ and shell. The primary risks are:
 
 | Threat | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| Prompt injection via sheet data | Medium | Agent executes unintended actions | Exec runs in ephemeral sandbox containers; workspace scoped; no host access |
+| Prompt injection via sheet data | Medium | Agent executes unintended actions | Exec runs in ephemeral sandbox containers for both agents; workspace scoped; no host access |
 | Agent credential exfiltration | Low | Google/Slack tokens stolen | Dedicated accounts; tokens in Docker volume only |
 | Lateral movement to LAN hosts | Low | Access to MacBook or other devices | iptables DOCKER-USER rules |
 | Lateral movement via Tailscale | Low | Access to other Tailscale nodes | iptables blocks 100.64.0.0/10 |
@@ -199,8 +199,7 @@ and shell. The primary risks are:
 | LAN lateral movement | iptables DOCKER-USER drop rule | ✅ Done | Manual step; see README |
 | Tailscale lateral movement | iptables DOCKER-USER drop rule | ✅ Done | Manual step; see README |
 | Outbound SSH | iptables TCP/22 drop rule | ✅ Done | Manual step; see README |
-| Shell/exec tool (main agent) | Disabled via `tools.deny` in openclaw.json | ✅ Done | openclaw.json |
-| Shell/exec tool (chattpc26) | Exec runs in ephemeral sandbox containers only; host untouched | ✅ Done | `GOG-SANDBOX-PLAN.md` |
+| Shell/exec tool (all agents) | Exec runs in ephemeral sandbox containers only; host untouched | ✅ Done | openclaw.json / `GOG.md` |
 | Agent sandboxing | `sandbox.mode: "all"` globally in openclaw.json | ✅ Done | openclaw.json |
 | Config writes | `configWrites: false` per channel; `commands.config: false` | ✅ Done | openclaw.json |
 | Slack access | DM-only pairing; Tailscale-only port | ✅ Done | openclaw.json |
@@ -233,8 +232,7 @@ By design and enforcement:
 - Cannot SSH to the MacBook or any other host (iptables + no SSH keys in container)
 - Cannot reach other LAN hosts (iptables)
 - Cannot reach other Tailscale nodes (iptables)
-- Cannot run shell commands on the host (exec runs only inside ephemeral sandbox containers)
-- main agent cannot run exec at all (`tools.deny: ["exec","process","bash"]`)
+- Cannot run shell commands on the host (exec runs only inside ephemeral sandbox containers for both agents)
 - Cannot be commanded by anyone other than Charlie's Slack account
 - Cannot access Charlie's personal Google account or Drive
 
@@ -242,10 +240,10 @@ By design and enforcement:
 
 - **Prompt injection via sheet content** remains the most realistic attack vector. If a
   survey respondent puts instructions in a free-text field, the agent could act on them.
-  For the main agent this is low risk (exec fully disabled). For chattpc26, injected commands
-  would run inside an ephemeral sandbox container with no host access, no docker.sock, and
-  no lateral movement — but the container does have outbound network, so data exfiltration
-  via HTTP to an external server is theoretically possible. Monitor agent logs periodically.
+  For both agents, injected commands would run inside an ephemeral sandbox container with
+  no host access, no docker.sock, and no lateral movement — but the container does have
+  outbound network, so data exfiltration via HTTP to an external server is theoretically
+  possible. Monitor agent logs periodically.
 - **OpenClaw is young software** (formerly Moltbot/Clawdbot). Security architecture
   may change with updates. Review release notes before updating.
 - **Google OAuth tokens** in `~/.config/gogcli/keyring/` are as secure as host filesystem
@@ -280,8 +278,7 @@ By design and enforcement:
 - [x] Run onboarding wizard (local LLM)
 - [x] Connect Slack — main agent (DMs) and chattpc26 agent (channels C09KGGMS116, C0AJ1EL2KJ5)
 - [x] Apply iptables rules; verify in place
-- [x] Disable exec/shell tools for main agent via `tools.deny` in openclaw.json
-- [x] Enable agent sandboxing globally in openclaw.json (`sandbox.mode: "all"`)
+- [x] Enable agent sandboxing globally in openclaw.json (`sandbox.mode: "all"`) for all agents
 - [x] Set `configWrites: false` and `commands.config: false` to prevent agents editing gateway config
 - [x] Verify all security checks pass
 

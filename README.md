@@ -46,7 +46,8 @@ The entire `spark-ai-agents/` directory is mounted into the OpenClaw container. 
 │       ├── docker-compose.yml
 │       ├── SLACK_README.md
 │       ├── GMAIL.md
-│       ├── GOG-SANDBOX-PLAN.md
+│       ├── GOG.md
+│       ├── UPGRADE-2026.2.26.md
 │       └── .env                 # not committed — see Step 3
 └── spark-ai-agents/             # private repo
     ├── main/                    # default agent workspace
@@ -153,14 +154,22 @@ cat /home/node/.openclaw/openclaw.json | \
 node -e \"
 const fs = require('fs');
 let c = JSON.parse(fs.readFileSync('/dev/stdin','utf8'));
-c.gateway.controlUi = { allowInsecureAuth: true };
-c.gateway.auth.allowTailscale = true;
-c.gateway.trustedProxies = ['$(tailscale ip -4)'];
+c.gateway.controlUi = {
+  allowedOrigins: ['https://YOUR-HOSTNAME.YOUR-TAILNET.ts.net'],
+  allowInsecureAuth: true,
+  dangerouslyAllowHostHeaderOriginFallback: true
+};
 console.log(JSON.stringify(c, null, 2));
 \" > /tmp/cfg.json && mv /tmp/cfg.json /home/node/.openclaw/openclaw.json
 "
 docker compose restart openclaw-gateway
 ```
+
+Replace `YOUR-HOSTNAME.YOUR-TAILNET.ts.net` with the URL from `tailscale serve status`.
+
+> **Note (v2026.2.26+):** The `allowedOrigins` field is now required — the gateway will
+> crash on startup without it. If you see a crash loop with
+> `non-loopback Control UI requires gateway.controlUi.allowedOrigins`, this is why.
 
 ### 8. Confirm agent workspace path — use host paths
 
@@ -214,7 +223,7 @@ In the dashboard → **Settings → Config**, make these changes:
 "configWrites": false,
 ```
 
-**Enable sandboxing globally and disable exec for the main agent:**
+**Enable sandboxing globally:**
 ```json
 "sandbox": { "mode": "all", "workspaceAccess": "rw" },
 "agents": {
@@ -224,14 +233,34 @@ In the dashboard → **Settings → Config**, make these changes:
       "id": "main",
       "default": true,
       "workspace": "/home/YOUR_USER/code/spark-ai-agents/main",
-      "tools": { "deny": ["exec", "process", "bash"] },
-      "sandbox": { "mode": "all", "workspaceAccess": "rw" }
+      "tools": { "deny": [] },
+      "sandbox": {
+        "mode": "all",
+        "workspaceAccess": "rw",
+        "docker": {
+          "network": "qwen3-coder-next_nim_net",
+          "dangerouslyAllowExternalBindSources": true,
+          "binds": [
+            "/home/YOUR_USER/code/spark-ai-agents/shared:/shared:rw"
+          ]
+        }
+      }
     },
     {
       "id": "chattpc26",
       "workspace": "/home/YOUR_USER/code/spark-ai-agents/chattpc26",
       "tools": { "deny": [] },
-      "sandbox": { "mode": "all", "workspaceAccess": "rw" }
+      "sandbox": {
+        "mode": "all",
+        "workspaceAccess": "rw",
+        "docker": {
+          "network": "qwen3-coder-next_nim_net",
+          "dangerouslyAllowExternalBindSources": true,
+          "binds": [
+            "/home/YOUR_USER/code/spark-ai-agents/shared:/shared:rw"
+          ]
+        }
+      }
     }
   ]
 }
@@ -239,9 +268,12 @@ In the dashboard → **Settings → Config**, make these changes:
 
 > **Important:** You must include `"workspaceAccess": "rw"` in **each agent's** `sandbox` block, not just in `agents.defaults`. Per-agent `sandbox` config completely overrides the defaults — if you omit `workspaceAccess`, the sandbox will be read-only even if the default says otherwise.
 
-The chattpc26 agent requires exec to run `gog` for Google access. It gets exec inside
-ephemeral sandbox containers only — not on the host. See `GOG-SANDBOX-PLAN.md` for the
-full per-agent sandbox.docker configuration.
+> **Important (v2026.2.26+):** Bind-mount targets under `/workspace` are now blocked.
+> Use paths outside `/workspace` (e.g. `/shared`). Bind-mount sources outside the agent
+> workspace root also require `dangerouslyAllowExternalBindSources: true`.
+
+Both agents get sandbox exec — exec runs only inside ephemeral sandbox containers, not
+on the host. See `GOG.md` for the full gog/Google credential configuration.
 
 ### 11. Connect Slack
 See `openclaw/SLACK_README.md` for the complete walkthrough. Summary:
@@ -266,7 +298,7 @@ See `openclaw/SLACK_README.md` for the complete walkthrough. Summary:
 ```
    Use the **host path** for workspace (see Step 8). Always include `workspaceAccess: "rw"` — per-agent sandbox config overrides defaults.
 4. To route a specific Slack channel to this agent, add a binding and add the channel to the allowlist — see `openclaw/SLACK_README.md`
-5. If the agent needs `exec` (e.g., for gog), add per-agent `sandbox.docker` config — do NOT disable sandbox. See `GOG-SANDBOX-PLAN.md`.
+5. If the agent needs `exec` (e.g., for gog), add per-agent `sandbox.docker` config — do NOT disable sandbox. See `GOG.md`.
 6. After adding the agent to config, **remove any stale sandbox containers** and restart the gateway (see "Sandbox container lifecycle" below).
 
 ---
@@ -325,9 +357,10 @@ docker compose run --rm openclaw-cli dashboard --no-open
 
 ### Approve a Slack pairing request
 ```bash
-cd ~/code/spark-ai/openclaw
-docker compose run --rm openclaw-cli pairing approve slack <CODE>
+docker exec openclaw-gateway node dist/index.js pairing approve slack <CODE>
 ```
+
+> **Note:** Use `docker exec openclaw-gateway` rather than `docker compose run --rm openclaw-cli`. The standalone CLI container cannot reach the gateway over WebSocket when the gateway is bound to a Tailscale IP.
 
 ---
 
@@ -396,7 +429,7 @@ OpenClaw strips environment variables whose names contain security-sensitive key
 2. Create a wrapper script that reads the file and exports the variable before calling the real binary
 3. Bind-mount the wrapper as the tool name and the real binary under a different name
 
-See `GOG-SANDBOX-PLAN.md` for a worked example with gog.
+See `GOG.md` for a worked example with gog.
 
 ### Shared directories between agents
 
@@ -404,13 +437,18 @@ Each sandbox only sees its own `/workspace`. To share files between agents (e.g.
 ```json
 "sandbox": {
   "docker": {
+    "dangerouslyAllowExternalBindSources": true,
     "binds": [
-      "/home/YOUR_USER/code/spark-ai-agents/shared:/workspace/shared:rw"
+      "/home/YOUR_USER/code/spark-ai-agents/shared:/shared:rw"
     ]
   }
 }
 ```
 The left side must be the **host path**. The right side is where it appears inside the sandbox.
+
+> **Note (v2026.2.26+):** Bind targets under `/workspace` are now blocked — use a path
+> outside `/workspace` (e.g. `/shared`). If the source path is outside the agent workspace
+> directory, `dangerouslyAllowExternalBindSources: true` is also required.
 
 ---
 

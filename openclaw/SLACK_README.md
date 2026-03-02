@@ -111,18 +111,17 @@ In this step you'll use the **App token** you got from step 2 (xapp-...) and the
 ```json
 "agents": {
   "defaults": {
-    "model": { "primary": "vllm/Qwen/Qwen3-Coder-Next-FP8" },
-    "workspace": "/home/node/agents/main"
+    "model": { "primary": "vllm/Qwen/Qwen3-Coder-Next-FP8" }
   },
   "list": [
     {
       "id": "main",
-      "workspace": "/home/node/agents/main",
+      "workspace": "/home/YOUR_USER/code/spark-ai-agents/main",
       "default": true
     },
     {
       "id": "chattpc26",
-      "workspace": "/home/node/agents/chattpc26"
+      "workspace": "/home/YOUR_USER/code/spark-ai-agents/chattpc26"
     }
   ]
 },
@@ -151,9 +150,10 @@ To find a channel's ID: open Slack, go to the channel, click the channel name at
 After saving the config and seeing `[slack] socket mode connected` in the gateway logs, open a DM with your bot in Slack. It will send you a pairing code. Approve it on the server:
 
 ```bash
-cd ~/code/spark-ai/openclaw
-docker compose run --rm openclaw-cli pairing approve slack <CODE>
+docker exec openclaw-gateway node dist/index.js pairing approve slack <CODE>
 ```
+
+> **Note:** Use `docker exec openclaw-gateway` rather than `docker compose run --rm openclaw-cli`. The standalone CLI container cannot reach the gateway over WebSocket when the gateway is bound to a Tailscale IP.
 
 ---
 

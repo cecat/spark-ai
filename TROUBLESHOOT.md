@@ -1,5 +1,9 @@
 # Troubleshooting
 
+> **Upgrading OpenClaw?** See `openclaw/UPGRADE-2026.2.26.md` for a full guide to breaking
+> changes introduced in the 2026.2.26 release, including the new `allowedOrigins` requirement,
+> device pairing, sandbox bind-mount restrictions, and session snapshot caching.
+
 ## Quick log commands
 ```bash
 docker compose ps
@@ -75,8 +79,22 @@ Expected — gateway is not running yet. Start it after onboarding completes.
 **"control ui requires HTTPS or localhost"**
 Set up Tailscale Serve (README Step 7).
 
-**"pairing required" after Tailscale Serve is set up**
-Run the config patch in README Step 7 and restart.
+**Gateway crash loop: `non-loopback Control UI requires gateway.controlUi.allowedOrigins`**
+The `allowedOrigins` field is required in v2026.2.26+. Add it to `gateway.controlUi` in
+`openclaw.json` (see README Step 7 for the full config patch) and restart.
+
+**Dashboard shows "pairing required" after Tailscale Serve is set up**
+Two separate causes — check which applies:
+
+1. *Gateway config not patched yet* — run the config patch in README Step 7 and restart.
+2. *Control UI device pairing (v2026.2.26+)* — the dashboard now requires the browser to
+   be registered as a paired device. Approve it via:
+   ```bash
+   docker exec openclaw-gateway node dist/index.js devices list
+   docker exec openclaw-gateway node dist/index.js devices approve <uuid>
+   ```
+   Note: use `devices list/approve` (for the Control UI), not `pairing list/approve`
+   (which is for Slack DM pairing).
 
 **Token lost**
 ```bash
@@ -149,7 +167,7 @@ Do not attempt to use `tools.exec.host: "gateway"` for gog. OpenClaw wraps all s
 strings in `/bin/sh -c "..."`, so the exec-approvals allowlist sees `/bin/sh` — not the
 target binary — and blocks it. The exec-approvals CLI also fails with "pairing required"
 in self-hosted installs and cannot be used to modify the allowlist at runtime.
-Use sandbox exec instead — see `GOG-SANDBOX-PLAN.md`.
+Use sandbox exec instead — see `openclaw/GOG.md`.
 
 **gog auth fails silently in sandbox — wrong env var**
 `GOG_KEYRING=file` is the host env var convention but does NOT work inside the sandbox

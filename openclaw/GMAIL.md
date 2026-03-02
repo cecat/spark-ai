@@ -1,19 +1,19 @@
-# Gmail Integration Plan
-2026-03-02 need to update this to reflect openclaw upgrade issues and subsequent changes.
+# Gmail Integration
 
 ## Context
 
 This document describes the Gmail integration for the OpenClaw multi-agent setup on the
 NVIDIA DGX Spark. There are two agents:
 
-- **main** — the default agent, handles Slack DMs. Screens email requests, approves or
-  rejects them. Does NOT have exec access — stays locked down.
+- **main** — the default agent, handles Slack DMs. Screens email requests and approves or
+  rejects them. Has sandbox exec (same as chattpc26) but no gog credentials — used only
+  for file operations like listing the outbox.
 - **chattpc26** — handles TPC Slack channels (#tpc-openclaw, #openclaw-test). Has sandbox
   exec with gog for Google Workspace access. Queues email requests AND sends approved ones.
 
 Google account: `tpc26agent@gmail.com`
 gog is installed, authenticated for contacts/docs/drive/gmail/sheets, and working via
-sandbox exec on chattpc26. See `GOG-SANDBOX-PLAN.md` for sandbox configuration.
+sandbox exec on chattpc26. See `GOG.md` for sandbox configuration.
 
 ---
 
@@ -33,10 +33,11 @@ chattpc26 → shared/outbox/*.json → main (screens, writes approved/rejected)
                                  → moves to shared/sent/ or shared/rejected/
 ```
 
-**Why main stays exec-free:** main handles Slack DMs, which are an attack surface for
-prompt injection. If main had exec, a compromised main could both approve AND send emails,
-collapsing the supervisor pattern. By keeping main exec-free, a compromised main can only
-approve files — it cannot directly send email or run arbitrary commands.
+**Why main doesn't have gog credentials:** main handles Slack DMs, which are an attack
+surface for prompt injection. If main had gog access, a compromised main could both approve
+AND send emails, collapsing the supervisor pattern. main has sandbox exec for file operations
+(listing the outbox, reading/writing JSON) but no gog credentials — it can approve files but
+cannot directly send email.
 
 ---
 
@@ -91,40 +92,22 @@ moves to `shared/sent/` with `"sent_at"` added.
 
 ---
 
-## Step 1 — Add Gmail + Contacts Scopes to gog Auth (DONE)
+## Prerequisites — gog Setup
 
-The token has been re-authorized with all needed scopes:
-```
-tpc26agent@gmail.com  default  contacts,docs,drive,gmail,sheets  oauth
-```
+Before setting up the email workflow, gog must be installed, authenticated, and the
+chattpc26 sandbox configured with gog credentials. This covers all required services:
+`contacts, docs, drive, gmail, sheets`. See `GOG.md` for the complete setup.
 
-The Gmail API is enabled in the TPC26-Forms-Triage Google Cloud project.
-The People (Contacts) API must also be enabled — same one-click toggle in the Console.
+Required APIs in the Google Cloud Console (TPC26-Forms-Triage project):
+- Gmail API
+- People API (for `gog contacts`)
 
-Verified working:
-```bash
-GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=$(cat ~/.config/gogcli/.gog_pw) \
-  gog gmail search "newer_than:1d" --account tpc26agent@gmail.com --plain
-```
-> Note: Inside sandbox containers, use the `gog` wrapper (which reads the password
-> from file automatically). The above syntax is for host-side testing only.
+These are in addition to the Drive, Sheets, and Docs APIs already enabled for the
+chattpc26 Google account setup.
 
 ---
 
-## Step 2 — Enable People API in Google Cloud Console
-
-Go to APIs & Services → Enabled APIs in the TPC26-Forms-Triage project.
-Enable "People API" (used by `gog contacts`). This is a one-click toggle.
-
-Verify:
-```bash
-GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=$(cat ~/.config/gogcli/.gog_pw) \
-  gog contacts list --account tpc26agent@gmail.com --plain
-```
-
----
-
-## Step 3 — Create Shared Outbox Directories
+## Step 1 — Create Shared Outbox Directories
 
 ```bash
 mkdir -p ~/code/spark-ai-agents/shared/outbox
@@ -134,17 +117,22 @@ mkdir -p ~/code/spark-ai-agents/shared/rejected
 
 ---
 
-## Step 4 — openclaw.json Config
+## Step 2 — openclaw.json Config
 
-**main agent — NO changes to exec.** Keep `tools.deny: ["exec", "process", "bash"]`.
-main only reads/writes JSON files in the shared directory. It does not need exec.
+Both agents use identical `sandbox.docker` config (network, binds, empty deny list).
+They differ only in workspace path and `.md` instruction files. See README Step 10 for
+the full sandbox config block.
 
-**chattpc26 agent — already configured.** Has sandbox exec with gog binds.
-No config changes needed.
+**main agent** — has `dangerouslyAllowExternalBindSources: true` and the shared bind
+mount, but no gog credentials. Uses exec only for file operations (listing outbox, reading
+and writing JSON).
+
+**chattpc26 agent** — already configured with gog binary and credential bind mounts.
+No changes needed beyond the standard sandbox config.
 
 ---
 
-## Step 5 — Add EMAIL.md to main Agent Workspace
+## Step 3 — Add EMAIL.md to main Agent Workspace
 
 Create `~/code/spark-ai-agents/main/EMAIL.md`:
 
@@ -157,9 +145,9 @@ You screen them and mark each as approved or rejected. You do NOT send email you
 chattpc26 sends approved emails.
 
 ## Outbox Location
-Shared outbox: /workspace/shared/outbox/
-Sent archive:  /workspace/shared/sent/
-Rejected:      /workspace/shared/rejected/
+Shared outbox: /shared/outbox/
+Sent archive:  /shared/sent/
+Rejected:      /shared/rejected/
 
 ## When to Check
 You will receive a Slack DM reminder to check the outbox. When you receive it, process
@@ -176,10 +164,10 @@ Update the JSON file:
 - Set "status" to "rejected"
 - Add "rejected_at" with the current ISO 8601 timestamp
 - Add "rejected_reason" with a clear explanation
-Move the file to /workspace/shared/rejected/
+Move the file to /shared/rejected/
 
 ## Contacts Allowlist (HARD RULE)
-You do not have exec access and cannot check contacts directly. However, if the "to"
+You do not have gog credentials and cannot check contacts directly. However, if the "to"
 address is not someone you recognize as a known TPC contact, reject the email.
 chattpc26 is also required to verify contacts before queuing — this is a backup check.
 
@@ -219,7 +207,7 @@ inappropriate.
 
 ---
 
-## Step 6 — Add EMAIL.md to chattpc26 Agent Workspace
+## Step 4 — Add EMAIL.md to chattpc26 Agent Workspace
 
 Create `~/code/spark-ai-agents/chattpc26/EMAIL.md`:
 
@@ -230,9 +218,9 @@ Create `~/code/spark-ai-agents/chattpc26/EMAIL.md`:
 You queue email requests and send approved emails. You never send email without approval.
 
 ## Outbox Location
-/workspace/shared/outbox/
-/workspace/shared/sent/
-/workspace/shared/rejected/
+/shared/outbox/
+/shared/sent/
+/shared/rejected/
 
 ## Contacts Allowlist (HARD RULE — CHECK BEFORE QUEUING)
 Before writing any email to the outbox, verify the recipient is in Google Contacts:
@@ -265,7 +253,7 @@ For each approved file:
 gog gmail send --account tpc26agent@gmail.com --to <to> --subject "<subject>" --body "<body>" --force --no-input
 ```
 3. Update the JSON: add "sent_at" with current timestamp, set "status" to "sent".
-4. Move the file to /workspace/shared/sent/
+4. Move the file to /shared/sent/
 
 ## Standards — Follow These When Composing
 - Professional and respectful tone. You represent TPC.
@@ -283,7 +271,7 @@ gog gmail send --account tpc26agent@gmail.com --to <to> --subject "<subject>" --
 
 ---
 
-## Step 7 — Hybrid Scheduling: Heartbeat + Cron
+## Step 5 — Hybrid Scheduling: Heartbeat + Cron
 
 The email flow uses two scheduling mechanisms, each chosen for what it does best:
 
@@ -338,30 +326,6 @@ and cheaply than an agent.
 
 ---
 
-## Step 8 — Add Contacts Scope to Auth Token
-
-Re-auth with contacts scope added:
-```bash
-GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=$(cat ~/.config/gogcli/.gog_pw) \
-  gog auth add tpc26agent@gmail.com --services drive,sheets,docs,gmail,contacts \
-  --manual --force-consent
-```
-
-Enable the People API in Google Cloud Console (TPC26-Forms-Triage project).
-
-Verify:
-```bash
-GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=$(cat ~/.config/gogcli/.gog_pw) \
-  gog contacts list --account tpc26agent@gmail.com --plain
-```
-
-Restart gateway after re-auth:
-```bash
-cd ~/code/spark-ai/openclaw && docker compose restart openclaw-gateway
-```
-
----
-
 ## Verification
 
 ```bash
@@ -385,9 +349,8 @@ cd ~/code/spark-ai/openclaw && docker compose restart openclaw-gateway
 
 ## Security Notes
 
-- **main stays exec-free.** `tools.deny: ["exec", "process", "bash"]` is preserved.
-  main can only read/write files in the workspace. A compromised main cannot send
-  email directly or run arbitrary commands.
+- **main has no gog credentials.** main has sandbox exec for file operations but cannot
+  run gog. A compromised main can approve outbox files but cannot directly send email.
 - **Contacts as allowlist.** Recipients must be in Google Contacts, managed by the
   human operator. Even if both agents are compromised, they can only email addresses
   that Charlie has explicitly approved.
