@@ -48,6 +48,7 @@ The entire `spark-ai-agents/` directory is mounted into the OpenClaw container. 
 │       ├── GMAIL.md
 │       ├── GOG.md
 │       ├── UPGRADE-2026.2.26.md
+│       ├── openclaw-upgrade-prompt.md   # prompt template for upgrade analysis
 │       └── .env                 # not committed — see Step 3
 └── spark-ai-agents/             # private repo
     ├── main/                    # default agent workspace
@@ -381,12 +382,22 @@ Run the update checker on the Spark:
 ~/code/spark-ai/check-for-updates.sh
 ```
 
-This checks both **OpenClaw** (pulls the latest Docker image) and **Qwen3-Coder-Next-FP8** (compares local vs. remote commit hashes on HuggingFace).
+**Model (Qwen3-Coder-Next-FP8):** Compares local vs. remote commit hash on HuggingFace.
+If a newer commit exists, prints the HF commits page URL and the download command.
+Model updates are generally safe — no config changes required.
 
-- If OpenClaw has a new image, it prints restart commands (including sandbox recreation).
-- If the model has a newer commit on HF, it tells you to review the commit history — it may be just a README change, not new model weights.
+**OpenClaw:** Pulls the latest image (small container, fast). If a new version is
+downloaded, the script generates a ready-to-use prompt at `/tmp/openclaw-upgrade-prompt.md`
+with your current `openclaw.json` already embedded. Open it, paste in the release notes
+from the GitHub URL the script prints, and take the whole thing to Claude or your preferred
+AI assistant for an impact analysis before restarting.
 
-`docker compose up -d` does **not** check for image updates. You must `docker pull` explicitly, which this script does for you.
+Your running gateway is **not affected** by the pull — it only changes when you explicitly
+run `docker compose down && docker compose up -d`. The script prints those commands after
+the prompt is generated.
+
+The prompt template lives at `openclaw/openclaw-upgrade-prompt.md` and can be edited
+to refine the analysis instructions without touching the script.
 
 ### Update vLLM image
 ```bash
