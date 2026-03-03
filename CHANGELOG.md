@@ -13,3 +13,5 @@ All changes to documentation files in this repo.
 - TROUBLESHOOT.md: added "openclaw.json key config notes" section (moved from README)
 - TROUBLESHOOT.md: added "Sandbox gotchas" section (moved from README) with new "Absolute paths in agent markdown files" subsection covering PATHS.md strategy and ../shared vs /shared pitfall
 - CHANGELOG.md: created this file
+- check_openclaw.sh: created — checks GHCR for a newer OpenClaw image digest without pulling; --update pulls and generates upgrade analysis prompt
+- check_model.sh: created — checks HuggingFace for a newer model commit without downloading; --update prompts for HF token and downloads (~46GB, resumable)
