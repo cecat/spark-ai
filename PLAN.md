@@ -60,7 +60,7 @@ spark-ai/
 | qwen3-coder-next .env | ✅ Created | `HF_HUB_OFFLINE=0` — flip to `1` after confirming model is cached |
 | vLLM smoke test | ✅ Verified | Prompt/response confirmed via Docker network test container |
 | openclaw compose | ✅ Running | Gateway up; Tailscale-only; connected to vLLM |
-| openclaw-workspace | ✅ Created | `~/code/spark-ai-agents/` — multi-agent private repo |
+| openclaw-workspace | ✅ Created | `~/code/spark-ai-agents/` — multi-agent private repo; each agent workspace has `PATHS.md` as path source of truth |
 | Tests directory | ✅ Created | `tests/` with vLLM, OpenClaw, and security tests; CI workflow in `.github/` |
 | OpenClaw onboarding | ✅ Done | main + chattpc26 agents configured |
 | Slack bot | ✅ Done | ChatCeC app; main agent handles DMs; chattpc26 handles TPC channels |
@@ -97,7 +97,7 @@ The agent runs on a schedule (or on demand via Slack) and performs the following
    - Notable new entries since the last report
    - Any anomalies or data quality issues worth flagging
 
-3. **Produce a report as a Markdown file** — written to `~/openclaw-workspace/reports/`
+3. **Produce a report as a Markdown file** — written to `~/code/spark-ai-agents/shared/reports/`
    on the Spark host. Report filenames should be datestamped, e.g.
    `tpc-survey-report-2026-02-24.md`.
 
@@ -116,30 +116,7 @@ Later: scheduled via OpenClaw's scheduling capability (e.g. weekly on Monday mor
 ### Agent Identity and Persona
 
 The agent should be configured with a clear persona and scope description so it stays
-on task. Suggested `agent.json` settings:
-
-```json
-{
-  "name": "tpc-reports",
-  "description": "TPC survey monitoring agent. Reads three Google Sheets (TPC member surveys), produces summary reports, and posts them to Slack. Does not send email, modify any sheets, or access any files outside its workspace.",
-  "sandbox": {
-    "enabled": true,
-    "network": "none"
-  },
-  "tools": {
-    "filesystem": {
-      "enabled": true,
-      "allowedPaths": ["/home/node/workspace"]
-    },
-    "shell": {
-      "enabled": false
-    },
-    "browser": {
-      "enabled": true
-    }
-  }
-}
-```
+on task. Configure the agent in openclaw.json with sandbox exec enabled (see README for the config pattern). Create a `PATHS.md` in the agent workspace defining all absolute container paths — other `.md` files reference these rather than hard-coding paths. See `main/` in `spark-ai-agents` for a working example.
 
 ### Google Sheets — Setup Steps
 
@@ -295,7 +272,7 @@ By design and enforcement:
 ### Phase 5 — Report Generation
 - [ ] Identify exact field names and structure of each Google Form / Sheet
 - [ ] Develop and test prompt/skill for per-sheet summary report
-- [ ] Test Markdown report output to `~/openclaw-workspace/reports/`
+- [ ] Test Markdown report output to `~/code/spark-ai-agents/shared/reports/`
 - [ ] Test Slack delivery of report file
 - [ ] Optionally: test Google Doc creation and sharing
 
@@ -334,7 +311,7 @@ Requires OpenClaw to be running and `TAILSCALE_IP` set in environment.
 Runs on the Spark host (not inside a container) with additional `--macbook` mode. Asserts:
 - Port 8000 is NOT bound on the host (`ss -ltnp`)
 - Port 18789 is bound to Tailscale IP only
-- Only `~/openclaw-workspace` bind-mounted; no sensitive paths (`/etc`, `~/.ssh`, `/root`)
+- Only `~/code/spark-ai-agents` bind-mounted; no sensitive paths (`/etc`, `~/.ssh`, `/root`)
 - OpenClaw not running as root
 - Container cannot reach LAN gateway, Tailscale CGNAT range, or outbound SSH (TCP/22)
 - `iptables -L DOCKER-USER -n` contains DROP rules for LAN, CGNAT, and dpt:22
@@ -414,7 +391,7 @@ local AI and gives full control over the security boundary.
 | LAN subnet | `10.0.4.0/22` (confirmed via `ip route show`) |
 | Model | `Qwen/Qwen3-Coder-Next-FP8` |
 | Model cache | `~/.cache/huggingface/hub/models--Qwen--Qwen3-Coder-Next-FP8/` |
-| Workspace | `~/openclaw-workspace/` |
+| Workspace | `~/code/spark-ai-agents/` |
 | vLLM image | `vllm-node` (local build) |
 | vLLM build repo | `~/code/spark-vllm-docker/` |
 | OpenClaw port | `18789` |

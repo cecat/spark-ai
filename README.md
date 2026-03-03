@@ -60,6 +60,7 @@ The entire `spark-ai-agents/` directory is mounted into the OpenClaw container. 
     │   ├── EMAIL.md
     │   ├── MEMORY.md
     │   ├── HEARTBEAT.md
+    │   ├── PATHS.md             # canonical path definitions (source of truth)
     │   └── memory/              # daily memory files (auto-created by agent)
     ├── chattpc26/               # example second agent
     │   ├── IDENTITY.md
@@ -69,6 +70,7 @@ The entire `spark-ai-agents/` directory is mounted into the OpenClaw container. 
     │   ├── TOOLS.md
     │   ├── EMAIL.md
     │   ├── MEMORY.md
+    │   ├── PATHS.md             # canonical path definitions (source of truth)
     │   └── memory/
     ├── scripts/
     │   └── send-approved-emails.sh  # cron script for email sending
@@ -288,7 +290,7 @@ See `openclaw/SLACK_README.md` for the complete walkthrough. Summary:
 ## Adding a new agent
 
 1. Create a subdirectory in `spark-ai-agents/`: `mkdir ~/code/spark-ai-agents/new-agent`
-2. Populate it with the standard markdown files (copy from `main/` as a template)
+2. Populate it with the standard markdown files (copy from `main/` as a template). Create a `PATHS.md` defining all absolute container paths the agent uses (see `main/PATHS.md`). All other `.md` files should reference `PATHS.md` rather than hard-coding paths. Always use **absolute** paths (e.g. `/shared/`) — never relative paths like `../shared/`, which silently resolve to the wrong location inside the sandbox.
 3. In the dashboard → **Settings → Config**, add the agent to `agents.list`:
 ```json
 {
@@ -300,7 +302,7 @@ See `openclaw/SLACK_README.md` for the complete walkthrough. Summary:
    Use the **host path** for workspace (see Step 8). Always include `workspaceAccess: "rw"` — per-agent sandbox config overrides defaults.
 4. To route a specific Slack channel to this agent, add a binding and add the channel to the allowlist — see `openclaw/SLACK_README.md`
 5. If the agent needs `exec` (e.g., for gog), add per-agent `sandbox.docker` config — do NOT disable sandbox. See `GOG.md`.
-6. After adding the agent to config, **remove any stale sandbox containers** and restart the gateway (see "Sandbox container lifecycle" below).
+6. After adding the agent to config, **remove any stale sandbox containers** and restart the gateway (see `TROUBLESHOOT.md` → Sandbox gotchas → Sandbox container lifecycle).
 
 ---
 
@@ -314,24 +316,6 @@ OpenClaw supports multiple agents behind a single Slack app. In `openclaw.json`:
 - `channels.slack.channels` — allowlist of channel IDs the bot will respond in (required when `groupPolicy: "allowlist"`)
 
 See `openclaw/SLACK_README.md` for a worked example.
-
----
-
-## openclaw.json — key config notes
-
-- `gateway.auth.mode` must be `"token"` with a `"token"` field — `"password"` mode requires a separate `"password"` field and will crash-loop the gateway if misconfigured
-- `channels.slack.channels` is an **object** keyed by channel ID, not an array: `{ "C123": { "allow": true } }`
-- `channels.slack.groupPolicy: "allowlist"` with an empty `channels` object means the bot responds nowhere
-- `streaming: false` is required — Slack's native streaming API fails silently without `assistant:write`
-- Do not add `assistant:write` scope to the Slack app
-- `webhookPath: "/slack/events"` must be present even in Socket Mode
-- When editing openclaw.json directly (e.g. to fix a crash loop when the container won't start):
-```bash
-docker run --rm -v openclaw_openclaw-config:/data alpine cat /data/openclaw.json
-docker run --rm -v openclaw_openclaw-config:/data alpine sh -c 'cat > /data/openclaw.json << '"'"'EOF'"'"'
-{ ... }
-EOF'
-```
 
 ---
 
@@ -409,58 +393,4 @@ cd ~/code/spark-ai/openclaw && docker compose up -d
 
 ---
 
-## Sandbox gotchas
-
-OpenClaw runs each agent inside a Docker sandbox container. These are created and managed by the gateway, not by docker-compose. Several non-obvious behaviors can cause hours of debugging:
-
-### Sandbox container lifecycle
-
-Sandbox containers (`openclaw-sbx-agent-*`) are **not** managed by docker-compose. Running `docker compose down && docker compose up` restarts the gateway but does **not** recreate existing sandbox containers. They keep their old mounts, env vars, and config.
-
-To force-recreate sandboxes after a config change:
-```bash
-# Stop and remove stale sandbox containers
-docker stop $(docker ps -q --filter name=openclaw-sbx)
-docker rm $(docker ps -aq --filter name=openclaw-sbx)
-# Then restart the gateway
-cd ~/code/spark-ai/openclaw && docker compose restart openclaw-gateway
-```
-The gateway will create fresh sandbox containers (lazily, on first message to each agent).
-
-### Per-agent sandbox config overrides defaults entirely
-
-If an agent in `agents.list` has its own `sandbox` block, it **completely replaces** `agents.defaults.sandbox`. This means settings like `workspaceAccess: "rw"` from defaults are silently lost. Always re-declare `workspaceAccess` in each agent's sandbox config.
-
-### Environment variable security filter
-
-OpenClaw strips environment variables whose names contain security-sensitive keywords (e.g., `PASSWORD`, `SECRET`, `TOKEN`). If you set `GOG_KEYRING_PASSWORD` in `sandbox.docker.env`, the agent will never see it.
-
-**Workaround:** Use a wrapper script that reads the value from a file at runtime:
-1. Write the password to a file on the host (e.g., `~/.config/gogcli/.gog_pw`)
-2. Create a wrapper script that reads the file and exports the variable before calling the real binary
-3. Bind-mount the wrapper as the tool name and the real binary under a different name
-
-See `GOG.md` for a worked example with gog.
-
-### Shared directories between agents
-
-Each sandbox only sees its own `/workspace`. To share files between agents (e.g., an email outbox), add explicit bind mounts in the agent's `sandbox.docker.binds`:
-```json
-"sandbox": {
-  "docker": {
-    "dangerouslyAllowExternalBindSources": true,
-    "binds": [
-      "/home/YOUR_USER/code/spark-ai-agents/shared:/shared:rw"
-    ]
-  }
-}
-```
-The left side must be the **host path**. The right side is where it appears inside the sandbox.
-
-> **Note (v2026.2.26+):** Bind targets under `/workspace` are now blocked — use a path
-> outside `/workspace` (e.g. `/shared`). If the source path is outside the agent workspace
-> directory, `dangerouslyAllowExternalBindSources: true` is also required.
-
----
-
-See `TROUBLESHOOT.md` for error fixes. See `PLAN.md` for project status and roadmap.
+See `TROUBLESHOOT.md` for error fixes, config gotchas, and sandbox behavior. See `PLAN.md` for project status and roadmap.

@@ -217,3 +217,84 @@ ss -tlnp | grep 18789                            # must show TAILSCALE_IP, not 0
 docker compose exec openclaw-gateway ls /home/node/.ssh 2>&1   # must say no such file
 sudo iptables -L DOCKER-USER -n | grep DROP      # must show 3 DROP rules
 ```
+
+---
+
+## openclaw.json — key config notes
+
+- `gateway.auth.mode` must be `"token"` with a `"token"` field — `"password"` mode requires a separate `"password"` field and will crash-loop the gateway if misconfigured
+- `channels.slack.channels` is an **object** keyed by channel ID, not an array: `{ "C123": { "allow": true } }`
+- `channels.slack.groupPolicy: "allowlist"` with an empty `channels` object means the bot responds nowhere
+- `streaming: false` is required — Slack's native streaming API fails silently without `assistant:write`
+- Do not add `assistant:write` scope to the Slack app
+- `webhookPath: "/slack/events"` must be present even in Socket Mode
+- When editing openclaw.json directly (e.g. to fix a crash loop when the container won't start):
+```bash
+docker run --rm -v openclaw_openclaw-config:/data alpine cat /data/openclaw.json
+docker run --rm -v openclaw_openclaw-config:/data alpine sh -c 'cat > /data/openclaw.json << '"'"'EOF'"'"'
+{ ... }
+EOF'
+```
+
+---
+
+## Sandbox gotchas
+
+OpenClaw runs each agent inside a Docker sandbox container. These are created and managed by the gateway, not by docker-compose. Several non-obvious behaviors can cause hours of debugging:
+
+### Sandbox container lifecycle
+
+Sandbox containers (`openclaw-sbx-agent-*`) are **not** managed by docker-compose. Running `docker compose down && docker compose up` restarts the gateway but does **not** recreate existing sandbox containers. They keep their old mounts, env vars, and config.
+
+To force-recreate sandboxes after a config change:
+```bash
+# Stop and remove stale sandbox containers
+docker stop $(docker ps -q --filter name=openclaw-sbx)
+docker rm $(docker ps -aq --filter name=openclaw-sbx)
+# Then restart the gateway
+cd ~/code/spark-ai/openclaw && docker compose restart openclaw-gateway
+```
+The gateway will create fresh sandbox containers (lazily, on first message to each agent).
+
+### Per-agent sandbox config overrides defaults entirely
+
+If an agent in `agents.list` has its own `sandbox` block, it **completely replaces** `agents.defaults.sandbox`. This means settings like `workspaceAccess: "rw"` from defaults are silently lost. Always re-declare `workspaceAccess` in each agent's sandbox config.
+
+### Environment variable security filter
+
+OpenClaw strips environment variables whose names contain security-sensitive keywords (e.g., `PASSWORD`, `SECRET`, `TOKEN`). If you set `GOG_KEYRING_PASSWORD` in `sandbox.docker.env`, the agent will never see it.
+
+**Workaround:** Use a wrapper script that reads the value from a file at runtime:
+1. Write the password to a file on the host (e.g., `~/.config/gogcli/.gog_pw`)
+2. Create a wrapper script that reads the file and exports the variable before calling the real binary
+3. Bind-mount the wrapper as the tool name and the real binary under a different name
+
+See `GOG.md` for a worked example with gog.
+
+### Shared directories between agents
+
+Each sandbox only sees its own `/workspace`. To share files between agents (e.g., an email outbox), add explicit bind mounts in the agent's `sandbox.docker.binds`:
+```json
+"sandbox": {
+  "docker": {
+    "dangerouslyAllowExternalBindSources": true,
+    "binds": [
+      "/home/YOUR_USER/code/spark-ai-agents/shared:/shared:rw"
+    ]
+  }
+}
+```
+The left side must be the **host path**. The right side is where it appears inside the sandbox.
+
+> **Note (v2026.2.26+):** Bind targets under `/workspace` are now blocked — use a path
+> outside `/workspace` (e.g. `/shared`). If the source path is outside the agent workspace
+> directory, `dangerouslyAllowExternalBindSources: true` is also required.
+
+### Absolute paths in agent markdown files
+
+Agent `.md` files run inside the sandbox where the workspace is mounted at `/workspace/` and shared directories at `/shared/`. Always use **absolute container paths** — never relative paths.
+
+**Wrong:** `../shared/outbox/` — silently resolves to the wrong directory inside the container.
+**Right:** `/shared/outbox/` — always resolves correctly regardless of working directory.
+
+Keep a `PATHS.md` in each agent workspace as the single source of truth for all paths referenced across markdown files. Other `.md` files should reference `PATHS.md` rather than hard-coding paths — this makes corrections a one-file change and prevents the same path from drifting to different values across files.
