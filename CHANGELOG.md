@@ -15,3 +15,5 @@ All changes to documentation files in this repo.
 - CHANGELOG.md: created this file
 - check_openclaw.sh: created — checks GHCR for a newer OpenClaw image digest without pulling; --update pulls and generates upgrade analysis prompt
 - check_model.sh: created — checks HuggingFace for a newer model commit without downloading; --update prompts for HF token and downloads (~46GB, resumable)
+- openclaw/GMAIL.md: contacts check architecture — deterministic gog checks owned by chattpc26 (queue time) and cron (send time); main focuses on content screening only
+- scripts/send-approved-emails.sh: fixed duplicate-send bug (original outbox file not removed after send); fixed contacts check to use gog contacts list --json instead of gog contacts search (which matches by name, not email); added REJECTED_DIR variable
