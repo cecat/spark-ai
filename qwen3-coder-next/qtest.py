@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Quick test of the vLLM endpoint on the Spark."""
 
+import sys
 import urllib.request
 import json
 
 URL = "http://localhost:8000/v1/chat/completions"
 MODEL = "Qwen/Qwen3-Coder-Next-FP8"
-PROMPT = "What is the best time of year to visit Chicago in terms of pleasant weather, and what is the one thing you'd recommend a person should do if they have only one day to spend.?"
+DEFAULT_PROMPT = "What is the best time of year to visit Chicago in terms of pleasant weather, and what is the one thing you'd recommend a person should do if they have only one day to spend.?"
+
+PROMPT = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_PROMPT
 
 payload = json.dumps({
     "model": MODEL,
