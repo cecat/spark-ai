@@ -38,17 +38,21 @@ The entire `spark-ai-agents/` directory is mounted into the OpenClaw container. 
 │   ├── README.md
 │   ├── TROUBLESHOOT.md
 │   ├── PLAN.md
-│   ├── check-for-updates.sh     # checks for OpenClaw + model updates
+│   ├── TODO-PLAN.md             # design rationale for agent self-scheduling
+│   ├── check_openclaw.sh        # check for OpenClaw updates (no pull without --update)
+│   ├── check_model.sh           # check for model updates (no download without --update)
 │   ├── qwen3-coder-next/
 │   │   ├── docker-compose.yml
 │   │   └── .env                 # not committed — see Step 3
 │   └── openclaw/
 │       ├── docker-compose.yml
-│       ├── SLACK_README.md
-│       ├── GMAIL.md
-│       ├── GOG.md
+│       ├── ONBOARDING.md        # onboarding log and decision rationale
+│       ├── SLACK_README.md      # Step 11: Slack integration guide
+│       ├── GOG.md               # Step 12: Google Workspace (gog) setup
+│       ├── GMAIL.md             # email workflow (outbox, approval, cron sending)
+│       ├── AGENT-SCHEDULING.md  # Step 13: agent self-scheduling via TODO.md
 │       ├── UPGRADE-2026.2.26.md
-│       ├── openclaw-upgrade-prompt.md   # prompt template for upgrade analysis
+│       ├── openclaw-upgrade-prompt.md
 │       └── .env                 # not committed — see Step 3
 └── spark-ai-agents/             # private repo
     ├── main/                    # default agent workspace
@@ -59,8 +63,10 @@ The entire `spark-ai-agents/` directory is mounted into the OpenClaw container. 
     │   ├── TOOLS.md
     │   ├── EMAIL.md
     │   ├── MEMORY.md
-    │   ├── HEARTBEAT.md
+    │   ├── HEARTBEAT.md         # heartbeat checklist (email approval + TODO execution)
     │   ├── PATHS.md             # canonical path definitions (source of truth)
+    │   ├── TODO.md              # scheduled task queue
+    │   ├── CHANGELOG.md
     │   └── memory/              # daily memory files (auto-created by agent)
     ├── chattpc26/               # example second agent
     │   ├── IDENTITY.md
@@ -70,14 +76,23 @@ The entire `spark-ai-agents/` directory is mounted into the OpenClaw container. 
     │   ├── TOOLS.md
     │   ├── EMAIL.md
     │   ├── MEMORY.md
+    │   ├── HEARTBEAT.md         # heartbeat checklist (TODO execution)
     │   ├── PATHS.md             # canonical path definitions (source of truth)
-    │   └── memory/
+    │   ├── TODO.md              # scheduled task queue
+    │   ├── URLS.md              # curated URLs for agent reference
+    │   ├── CHANGELOG.md
+    │   ├── memory/
+    │   └── templates/           # email templates (JSON)
     ├── scripts/
-    │   └── send-approved-emails.sh  # cron script for email sending
+    │   ├── send-approved-emails.sh  # cron: sends approved outbox emails via gog
+    │   └── check-todos.sh           # cron: marks due TODO items READY for heartbeat
     └── shared/                  # cross-agent shared files
         ├── outbox/              # pending email JSON files
         ├── sent/                # sent email archive
         ├── rejected/            # rejected emails
+        ├── todos/
+        │   ├── todo.log         # append-only task execution log
+        │   └── plans/           # complex task plan files (*.md)
         └── reports/
 ```
 
@@ -285,6 +300,27 @@ See `openclaw/SLACK_README.md` for the complete walkthrough. Summary:
 - Add bot token and app token to openclaw.json under `channels.slack`
 - For multiple agents, use `bindings` in openclaw.json to route specific channels to specific agents
 
+> **Slack is a prerequisite for steps 12 and 13.** Steps 12 (Google/gog) and 13 (TODO scheduling) are independent of each other — you can do either, both, or neither.
+
+### 12. Connect Google Workspace via gog (optional)
+Required if agents need access to Gmail, Google Drive, Sheets, Docs, or Contacts.
+See `openclaw/GOG.md` for the complete walkthrough. Summary:
+- Create a Google Cloud project and enable the APIs you need (Drive, Sheets, Docs, Gmail, People)
+- Configure OAuth consent screen and download credentials JSON
+- Install `gog` on the Spark host and run `gog auth login` to authenticate
+- Add the gog binary and credential bind mounts to the agent's sandbox config in openclaw.json
+- See `openclaw/GMAIL.md` for the email outbox workflow (queuing, approval, cron sending)
+
+### 13. Enable agent self-scheduling via TODO.md (optional)
+Allows agents to schedule future tasks ("remind me at 5pm", "send emails on Monday") without sleeping or blocking. Requires a heartbeat to be configured on the agent.
+See `openclaw/AGENT-SCHEDULING.md` for the complete walkthrough. Summary:
+- Create `TODO.md` in each agent workspace
+- Create `shared/todos/` directory structure
+- Install `scripts/check-todos.sh` and add a crontab entry (`*/5 * * * *`)
+- Set heartbeat interval to 15 min in openclaw.json for agents that use TODO
+- Add the READY-item execution step to each agent's `HEARTBEAT.md`
+- Add the deferred-task rule to each agent's `SOUL.md`
+
 ---
 
 ## Adding a new agent
@@ -361,27 +397,24 @@ sudo iptables -L DOCKER-USER -n | grep DROP   # must show 3 DROP rules
 
 ## Checking for updates
 
-Run the update checker on the Spark:
+Two separate scripts — neither downloads or pulls anything without `--update`:
+
 ```bash
-~/code/spark-ai/check-for-updates.sh
+~/code/spark-ai/check_openclaw.sh        # check OpenClaw image version
+~/code/spark-ai/check_model.sh           # check Qwen model version
 ```
 
-**Model (Qwen3-Coder-Next-FP8):** Compares local vs. remote commit hash on HuggingFace.
-If a newer commit exists, prints the HF commits page URL and the download command.
-Model updates are generally safe — no config changes required.
+**`check_openclaw.sh`:** Fetches the GHCR manifest digest via a HEAD request (no pull).
+Compares against your running container's digest. With `--update`: pulls the new image
+and generates a ready-to-use prompt at `/tmp/openclaw-upgrade-prompt.md` with your
+current `openclaw.json` embedded — paste in the release notes and take it to Claude
+for impact analysis before restarting.
 
-**OpenClaw:** Pulls the latest image (small container, fast). If a new version is
-downloaded, the script generates a ready-to-use prompt at `/tmp/openclaw-upgrade-prompt.md`
-with your current `openclaw.json` already embedded. Open it, paste in the release notes
-from the GitHub URL the script prints, and take the whole thing to Claude or your preferred
-AI assistant for an impact analysis before restarting.
+**`check_model.sh`:** Uses the HuggingFace hub API to compare local vs. remote commit hash.
+No download occurs. With `--update`: prompts for your HF token and runs `snapshot_download`.
 
-Your running gateway is **not affected** by the pull — it only changes when you explicitly
-run `docker compose down && docker compose up -d`. The script prints those commands after
-the prompt is generated.
-
-The prompt template lives at `openclaw/openclaw-upgrade-prompt.md` and can be edited
-to refine the analysis instructions without touching the script.
+Your running gateway is **not affected** by either script — it only changes when you
+explicitly restart it.
 
 ### Update vLLM image
 ```bash

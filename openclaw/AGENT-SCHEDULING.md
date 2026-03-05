@@ -41,6 +41,30 @@ Agent heartbeat fires (every 15 min)
   → on failure: prefixes line with FAILED in TODO.md, appends FAIL to todo.log, DMs Charlie
 ```
 
+---
+
+## Timing — End-to-End Latency
+
+Two delays stack between when a task is scheduled and when it executes:
+
+| Step | Delay |
+|---|---|
+| Cron detects due item and marks it READY | 0 – 5 min after scheduled time |
+| Agent heartbeat fires and executes READY item | 0 – 15 min after READY |
+| **Total worst case** | **~20 min after scheduled time** |
+
+**Example:** agent writes `2026-03-05T17:00:00Z | DM Charlie: go home`
+- Cron runs at 17:03 → marks READY (3 min lag)
+- Heartbeat fires at 17:12 → executes (9 min lag)
+- Charlie gets the DM at 17:12 — 12 minutes after the scheduled time
+
+**Practical guidance:**
+- "Remind me in 5 minutes" is not reliable — the task may fire up to 20 min later
+- "Remind me at 5pm" works well — the DM arrives between 5:00 and 5:20pm
+- Cron interval and heartbeat interval are independently tunable in `crontab` and `openclaw.json`
+
+---
+
 **Why cron marks READY instead of triggering the agent directly:**
 Triggering the agent would require posting a Slack message (needs bot token on host) or
 a gateway API call (unverified feature). Writing a flag to a file requires nothing — the
