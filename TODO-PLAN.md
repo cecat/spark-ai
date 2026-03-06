@@ -155,6 +155,17 @@ Heartbeat frequency: **15 minutes** (set in `openclaw.json` per-agent).
 
 ## Agent Instructions Changes
 
+Typed actions are a **finite, explicitly enumerated set**. Each typed action requires
+instructions in two agent files — one governing write time, one governing execution time:
+
+| File | When | Purpose |
+|---|---|---|
+| `SOUL.md` | Write time | How to form the entry; what data must be resolved interactively before writing |
+| `HEARTBEAT.md` | Execution time | Dispatch table: prefix to match and exactly what to do when READY |
+
+Adding a new typed action means updating both files for both agents, plus the supported
+actions table in `openclaw/TODO-IMPLEMENTATION.md`.
+
 ### SOUL.md (both agents) — add to Core Truths:
 > **Use TODO.md for deferred tasks.** When asked to do something at a future time
 > or after an interval, write a timestamped entry to `/workspace/TODO.md` (UTC ISO-8601).

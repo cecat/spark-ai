@@ -131,6 +131,22 @@ Typed actions fix this by requiring the agent to resolve all ambiguity *at write
 | Complex plan | `PLAN: <path>` | Agent heartbeat reads plan file, follows steps |
 | Free-text | anything else | Agent heartbeat uses judgment |
 
+### Adding a new typed action
+
+Typed actions are a **finite, explicitly enumerated set**. Each one must be registered in
+three places:
+
+1. **`SOUL.md`** (both agents) — write-time rules: the exact format, what data must be
+   confirmed interactively before the entry is written, and why. This is where the agent
+   learns how to create a correct entry while the human can still catch mistakes.
+2. **`HEARTBEAT.md`** (both agents) — a row in the execution-time dispatch table: the
+   prefix to match and exactly what to do when the entry is READY.
+3. **The "Supported typed actions" table above** in this document — so the implementation
+   reference stays current.
+
+Free-text entries (no recognized prefix) are always available as a fallback and require
+no registration — the agent uses its own judgment at heartbeat time.
+
 ### Interaction flow for SLACK_DM
 
 When a user asks "DM Ian tomorrow morning about his email," the agent should:
