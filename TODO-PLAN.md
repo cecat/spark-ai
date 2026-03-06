@@ -1,8 +1,10 @@
 # TODO-PLAN.md — Agent Self-Scheduling via TODO.md
 
-**Status:** Ready to implement
+**Status:** IMPLEMENTED
 **Goal:** Allow agents to schedule future tasks from a DM prompt without sleeping
 or editing HEARTBEAT.md.
+
+See [`openclaw/TODO-IMPLEMENTATION.md`](openclaw/TODO-IMPLEMENTATION.md) for the full configuration reference.
 
 ---
 
@@ -100,15 +102,22 @@ spark-ai-agents/
 
 ```
 Agent writes entry → TODO.md (status: pending, implied by presence)
-        ↓  (check-todos.sh fires when timestamp ≤ now)
-Agent receives Slack DM, executes task
+        ↓
+check-todos.sh fires (every 5 min via cron; when timestamp ≤ now)
+  → Rewrites line:  READY | <timestamp> | <task>
+  → Logs to todo.log:  <ts> | TRIGGERED | <task>
+        ↓
+OpenClaw heartbeat fires (every 15 min)
+Agent greps TODO.md for "^READY" lines, executes each task
         ↓  (on success)
 Agent appends to todo.log:  2026-03-04T23:01:42Z | OK | DM catlett@anl.gov: reminder to go home
-Agent removes line from TODO.md
+Agent removes READY line from TODO.md
         ↓  (on failure)
 Simple task:  append to todo.log:  2026-03-04T23:01:42Z | FAIL | <task> | <reason ≤80 chars>
 Plan task:    append to todo.log:  2026-03-04T23:01:42Z | FAIL | PLAN: /shared/todos/plans/foo.md
               agent updates foo.md with failure details
+Agent prefixes line with FAILED | in TODO.md (prevents re-execution; no auto-retry)
+Agent DMs Charlie to report what failed and why
 ```
 
 **Log format:** `<UTC ISO timestamp> | OK|FAIL | <task or PLAN: path> [| <fail reason>]`
@@ -159,16 +168,16 @@ Heartbeat frequency: **15 minutes** (set in `openclaw.json` per-agent).
 
 ## Implementation Checklist
 
-- [ ] Update `openclaw.json` — set heartbeat to 15 min for main and chattpc26
-- [ ] Create `main/TODO.md` (empty, with format comment)
-- [ ] Create `chattpc26/TODO.md` (empty, with format comment)
-- [ ] Create `shared/todos/` directory structure + empty `todo.log`
-- [ ] Write `scripts/check-todos.sh`
-- [ ] Add crontab entry on Spark: `*/5 * * * * .../check-todos.sh`
-- [ ] Update `main/HEARTBEAT.md` — add READY-item execution step
-- [ ] Update `chattpc26/HEARTBEAT.md` — same
-- [ ] Update `main/SOUL.md` and `chattpc26/SOUL.md` — add deferred-task rule
-- [ ] Update both `CHANGELOG.md` files
+- [x] Create `main/TODO.md` (empty, with format comment)
+- [x] Create `chattpc26/TODO.md` (empty, with format comment)
+- [x] Create `shared/todos/` directory structure + empty `todo.log`
+- [x] Write `scripts/check-todos.sh`
+- [x] Update `main/HEARTBEAT.md` — add READY-item execution step
+- [x] Update `chattpc26/HEARTBEAT.md` — same
+- [x] Update `main/SOUL.md` and `chattpc26/SOUL.md` — add deferred-task rule
+- [ ] Update `openclaw.json` — verify heartbeat is set to 15 min for main and chattpc26 *(verify on Spark)*
+- [ ] Add crontab entry on Spark: `*/5 * * * * .../check-todos.sh` *(verify on Spark)*
+- [ ] Update both `CHANGELOG.md` files *(in spark-ai-agents repo)*
 - [ ] Test: ask main "remind me in 6 minutes that this works"
 
 ---

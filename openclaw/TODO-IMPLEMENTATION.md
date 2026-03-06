@@ -1,8 +1,10 @@
-# Agent Self-Scheduling via TODO.md
+# TODO Implementation Reference — Agent Self-Scheduling via TODO.md
 
-This document describes how OpenClaw agents can schedule future tasks without sleeping,
-blocking, or requiring human intervention at execution time. The design rationale is in
-`../TODO-PLAN.md`.
+**Status:** IMPLEMENTED
+
+This document is the configuration reference for the TODO self-scheduling system. It
+describes how the system is set up and how each component is configured. Design rationale
+and architecture decisions are in [`../TODO-PLAN.md`](../TODO-PLAN.md).
 
 ---
 
@@ -188,20 +190,19 @@ spark-ai-agents/
 
 ---
 
-## Step 1 — Create Directory Structure
+## Step 1 — Directory Structure ✓
 
 ```bash
 mkdir -p ~/code/spark-ai-agents/shared/todos/plans
 touch ~/code/spark-ai-agents/shared/todos/todo.log
 ```
 
-Create `~/code/spark-ai-agents/main/TODO.md` and `~/code/spark-ai-agents/chattpc26/TODO.md`
-with the header format shown in the TODO.md Format section above. See the actual files in
-the repo for the current canonical version.
+`main/TODO.md` and `chattpc26/TODO.md` are in the `spark-ai-agents` repo. See those files
+for the current canonical format header.
 
 ---
 
-## Step 2 — Install check-todos.sh
+## Step 2 — check-todos.sh ✓
 
 Create `~/code/spark-ai-agents/scripts/check-todos.sh`:
 
@@ -284,53 +285,49 @@ chmod +x ~/code/spark-ai-agents/scripts/check-todos.sh
 
 ---
 
-## Step 3 — Add Crontab Entry
+## Step 3 — Crontab Entry *(verify on Spark)*
 
 ```bash
 (crontab -l; echo '*/5 * * * * /home/catlett/code/spark-ai-agents/scripts/check-todos.sh >> /home/catlett/code/spark-ai-agents/shared/todos/cron.log 2>&1') | crontab -
 ```
 
+Verify with: `crontab -l | grep check-todos`
+
 ---
 
-## Step 4 — Set Heartbeat to 15 Minutes
+## Step 4 — Set Heartbeat to 15 Minutes *(verify on Spark)*
 
-Edit `openclaw.json` in the Docker config volume. The agents key is `config["agents"]["list"]`.
-For each agent with `"heartbeat": {"every": "1h"}`, change to `"every": "15m"`.
-
-Convenience script (runs inside the volume, no host python permissions issue):
+`openclaw.json` lives inside the gateway container at `/home/node/.openclaw/openclaw.json`.
+Use `docker exec` to read, edit on the host, and redeploy — see `HANDOFF.md` for the
+canonical config management commands.
 
 ```bash
-docker run --rm -v openclaw_openclaw-config:/data alpine sh -c "
-apk add --quiet --no-cache python3 2>/dev/null
-python3 -c '
-import json
-path = \"/data/openclaw.json\"
-with open(path) as f:
-    config = json.load(f)
-changed = []
-for agent_config in config.get(\"agents\", {}).get(\"list\", []):
-    if \"heartbeat\" in agent_config and agent_config[\"heartbeat\"].get(\"every\") == \"1h\":
-        agent_config[\"heartbeat\"][\"every\"] = \"15m\"
-        changed.append(agent_config.get(\"id\", \"?\"))
-with open(path, \"w\") as f:
-    json.dump(config, f, indent=2)
-print(\"Updated:\", changed)
-'"
+# Read current config
+docker exec openclaw-gateway cat /home/node/.openclaw/openclaw.json > /tmp/openclaw-current.json
+
+# Edit /tmp/openclaw-current.json — set "heartbeat": {"every": "15m"} for each agent in
+# the "agents" > "list" array (or wherever heartbeat interval is configured for your version)
+
+# Deploy updated config
+cat /tmp/openclaw-current.json | docker exec -i openclaw-gateway \
+  sh -c 'cat > /home/node/.openclaw/openclaw.json'
+
+# Restart gateway to pick up the change
+cd ~/code/spark-ai/openclaw && docker compose restart openclaw-gateway
 ```
 
-Then restart the gateway:
-
+Verify with:
 ```bash
-cd ~/code/spark-ai/openclaw && docker compose restart
+docker exec openclaw-gateway cat /home/node/.openclaw/openclaw.json | python3 -m json.tool | grep -A2 heartbeat
 ```
 
 ---
 
-## Step 5 — Update Agent Instructions
+## Step 5 — Agent Instructions ✓
 
-### HEARTBEAT.md (both agents)
+### HEARTBEAT.md (both agents) — as implemented
 
-Add as the first section, before email outbox review:
+The first section of each agent's `HEARTBEAT.md` (in `spark-ai-agents`) reads:
 
 ```markdown
 ## TODO.md — Scheduled Task Execution
@@ -363,7 +360,7 @@ For each `READY` line:
    - DM Charlie to report what failed and why
 ```
 
-### SOUL.md (both agents) — add to Core Truths
+### SOUL.md (both agents) — as implemented in Core Truths
 
 ```markdown
 **Use TODO.md for deferred tasks.** When asked to do something at a future time or after
