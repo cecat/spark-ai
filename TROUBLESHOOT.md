@@ -4,6 +4,20 @@
 > changes introduced in the 2026.2.26 release, including the new `allowedOrigins` requirement,
 > device pairing, sandbox bind-mount restrictions, and session snapshot caching.
 
+## Contents
+
+- [Quick log commands](#quick-log-commands)
+- [Qwen / vLLM](#qwen--vllm)
+- [OpenClaw — Gateway](#openclaw--gateway)
+- [OpenClaw — Slack](#openclaw--slack)
+- [OpenClaw — Slack latency and session management](#openclaw--slack-latency-and-session-management)
+- [OpenClaw — Google / gog](#openclaw--google--gog)
+- [Security verification](#security-verification)
+- [openclaw.json — key config notes](#openclawjson--key-config-notes)
+- [Sandbox gotchas](#sandbox-gotchas)
+
+---
+
 ## Quick log commands
 ```bash
 docker compose ps
@@ -157,6 +171,38 @@ Ensure `im:read` and `im:write` scopes are present. Reinstall the app after addi
 The `channels.slack.channels` allowlist controls access; `bindings` controls which agent
 handles a channel. Both must be configured — a channel in `bindings` but not in the
 allowlist will be silently ignored.
+
+---
+
+## OpenClaw — Slack latency and session management
+
+### Multi-minute response delays / silent 10-minute timeouts
+
+**Symptom:** Agent responses take several minutes, or interactions go completely silent for 10+ minutes. May appear intermittent or agent-specific — the most-used channel is usually the worst affected. Fan noise on the Spark increases noticeably over time as the GPU works harder on each interaction.
+
+**Hypothesis:** OpenClaw replays the full conversation history to the model on every new message. As history accumulates over days, each message requires the model to process a larger and larger prompt — and prefill time grows with context size. This happens well before the model's 128K token limit is reached: on a ~50 tps local model, a session that has grown to 1+ MB of history can cause multi-minute delays and eventually hit OpenClaw's built-in 10-minute inference timeout.
+
+OpenClaw's `compaction: "safeguard"` setting (on by default) only fires when a session *approaches* the token limit — it protects against errors, not latency. At slow token rates, the session bogs down long before compaction ever triggers.
+
+**Workaround:** Schedule a daily session reset so history never accumulates past a day's worth. Two scripts in `spark-ai-agents/scripts/` handle this:
+
+- `reset-sessions.sh` — archives and clears session `.jsonl` files above 512 KB; run at 4am
+- `monitor-sessions.sh` — logs session file sizes every 5 min for trend tracking
+
+Add to crontab on Spark (`crontab -e`):
+```
+*/5 * * * * /home/catlett/code/spark-ai-agents/scripts/monitor-sessions.sh >> /home/catlett/code/spark-ai-agents/shared/sessions/cron.log 2>&1
+0 4 * * * /home/catlett/code/spark-ai-agents/scripts/reset-sessions.sh >> /home/catlett/code/spark-ai-agents/shared/sessions/cron.log 2>&1
+```
+
+Manual reset if an agent is slow right now:
+```bash
+ssh spark-ts 'bash ~/code/spark-ai-agents/scripts/reset-sessions.sh'
+```
+
+See `README.md` Step 14 for first-time setup and `spark-ai-agents/RUNBOOK.md` → Session Management for operational details.
+
+**Comment:** This explains why slowdowns appear agent-specific — whichever channel has the most accumulated conversation history is always the worst affected. Users on paid APIs will eventually hit a hard token-limit error that makes the problem visible (and may notice a mysterious jump in burn rate beforehand). On a local model with no billing signal, things just get quietly slower and slower until they time out. Higher throughput makes large contexts more tolerable, but daily session reset is good practice regardless — most conversations don't need the context of what someone asked the model yesterday.
 
 ---
 

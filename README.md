@@ -19,6 +19,13 @@ vLLM serving Qwen3-Coder-Next-FP8 + OpenClaw agent. Model API is Docker-internal
 [GB10 GPU + 128GB unified memory]
 ```
 
+> **Model throughput note:** Qwen3-Coder-Next-FP8 runs at ~50 tps on the DGX Spark GB10.
+> This is adequate for interactive chat and async workloads, but requires active session
+> management: OpenClaw sends the full conversation history on every inference call, and
+> prefill time grows with context size. Without daily session resets, a busy channel
+> accumulates enough history to cause multi-minute delays within a few weeks.
+> See Step 14 and `TROUBLESHOOT.md` → Slack latency for details.
+
 ---
 
 ## Repository structure
@@ -50,7 +57,7 @@ The entire `spark-ai-agents/` directory is mounted into the OpenClaw container. 
 │       ├── SLACK_README.md      # Step 11: Slack integration guide
 │       ├── GOG.md               # Step 12: Google Workspace (gog) setup
 │       ├── GMAIL.md             # email workflow (outbox, approval, cron sending)
-│       ├── AGENT-SCHEDULING.md  # Step 13: agent self-scheduling via TODO.md
+│       ├── TODO-IMPLEMENTATION.md  # Step 13: agent self-scheduling via TODO.md
 │       ├── UPGRADE-2026.2.26.md
 │       ├── openclaw-upgrade-prompt.md
 │       └── .env                 # not committed — see Step 3
@@ -85,7 +92,9 @@ The entire `spark-ai-agents/` directory is mounted into the OpenClaw container. 
     │   └── templates/           # email templates (JSON)
     ├── scripts/
     │   ├── send-approved-emails.sh  # cron: sends approved outbox emails via gog
-    │   └── check-todos.sh           # cron: marks due TODO items READY for heartbeat
+    │   ├── check-todos.sh           # cron: marks due TODO items READY for heartbeat
+    │   ├── monitor-sessions.sh      # cron: logs session file sizes every 5 min
+    │   └── reset-sessions.sh        # cron: archives and clears large sessions at 4am
     └── shared/                  # cross-agent shared files
         ├── outbox/              # pending email JSON files
         ├── sent/                # sent email archive
@@ -313,13 +322,34 @@ See `openclaw/GOG.md` for the complete walkthrough. Summary:
 
 ### 13. Enable agent self-scheduling via TODO.md (optional)
 Allows agents to schedule future tasks ("remind me at 5pm", "send emails on Monday") without sleeping or blocking. Requires a heartbeat to be configured on the agent.
-See `openclaw/AGENT-SCHEDULING.md` for the complete walkthrough. Summary:
+See `openclaw/TODO-IMPLEMENTATION.md` for the complete walkthrough. Summary:
 - Create `TODO.md` in each agent workspace
 - Create `shared/todos/` directory structure
 - Install `scripts/check-todos.sh` and add a crontab entry (`*/5 * * * *`)
 - Set heartbeat interval to 15 min in openclaw.json for agents that use TODO
 - Add the READY-item execution step to each agent's `HEARTBEAT.md`
 - Add the deferred-task rule to each agent's `SOUL.md`
+
+### 14. Set up session management (recommended for local models)
+
+OpenClaw stores full conversation history in session files and sends it all to the model on every message. On a ~50 tps local model this causes multi-minute delays as history accumulates. A daily cron job clears sessions before they grow large enough to matter.
+
+Two scripts in `spark-ai-agents/scripts/` handle this (already committed — just add the crontab entries):
+
+```bash
+# Add to crontab on Spark: crontab -e
+*/5 * * * * /home/catlett/code/spark-ai-agents/scripts/monitor-sessions.sh >> /home/catlett/code/spark-ai-agents/shared/sessions/cron.log 2>&1
+0 4 * * * /home/catlett/code/spark-ai-agents/scripts/reset-sessions.sh >> /home/catlett/code/spark-ai-agents/shared/sessions/cron.log 2>&1
+```
+
+Create the required directories on Spark:
+```bash
+mkdir -p ~/code/spark-ai-agents/shared/sessions ~/code/spark-ai-agents/shared/session-archives
+```
+
+The reset script archives any session `.jsonl` file above 512 KB to `shared/session-archives/YYYY-MM-DD/` and truncates it to zero. The agent starts fresh from its structured `.md` files on the next heartbeat or user message. Archives are kept on the host if you ever need to review past conversation history.
+
+See `TROUBLESHOOT.md` → Slack latency and `spark-ai-agents/RUNBOOK.md` → Session Management for background and manual reset commands.
 
 ---
 
