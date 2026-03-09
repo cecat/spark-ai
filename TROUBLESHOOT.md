@@ -250,16 +250,33 @@ Tokens expire every ~7 days because the Google Cloud OAuth consent screen is in
 unverified apps using sensitive scopes (Gmail, Drive).
 
 Re-auth requires a browser. Since Spark has no display, use SSH port forwarding
-to complete the OAuth flow from your Mac:
+and an interactive terminal session from your Mac:
 
+**Step 1** — open an interactive SSH session with port forwarding (keep this terminal):
 ```bash
-# From your Mac — tunnels port 44339 and runs gog auth
-ssh -A -L 44339:localhost:44339 spark-ts \
-  'GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=sparkagent2026 gog auth login --account tpc26agent@gmail.com'
+ssh -A -t -L 44339:localhost:44339 spark-ts
 ```
 
-Then immediately open **http://127.0.0.1:44339** in your Mac browser and complete
-the Google login. The SSH tunnel forwards Spark's OAuth callback port to your Mac.
+**Step 2** — in that SSH session, run:
+```bash
+export GOG_KEYRING_BACKEND=file
+export GOG_KEYRING_PASSWORD=$(cat ~/.config/gogcli/.gog_pw)
+gog auth login --account tpc26agent@gmail.com \
+  --services drive,sheets,docs,gmail,contacts \
+  --force-consent
+```
+
+**Step 3** — when gog prints `visit: http://127.0.0.1:44339`, open that URL in your
+Mac browser (the `-L` tunnel forwards it to Spark's gog server).
+
+**Step 4** — complete the Google login. When the browser redirects to
+`http://127.0.0.1:44339/callback?code=...` and the page fails to load, copy the
+full URL from the browser address bar and paste it into the SSH terminal. gog reads
+it from stdin and extracts the auth code.
+
+> **Why -t matters:** Running `ssh ... 'gog auth login'` non-interactively means gog
+> cannot read your pasted input. The `-t` flag allocates a pseudo-terminal so the
+> paste-back step works.
 
 Tokens auto-refresh when the sandbox has network access and credentials are mounted
 read-write. If auto-refresh fails (i.e. 7 days have passed), re-auth as above.
