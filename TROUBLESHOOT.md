@@ -241,7 +241,7 @@ The original GCP project tpc26-488714 was disabled by Google for a Terms of Serv
 violation (exact cause unclear — possibly related to OAuth consent screen configuration).
 A new project (TPC26-Forms-Triage) was created and re-auth was performed. If this happens
 again: create a new GCP project, re-configure OAuth consent screen and credentials, run
-`gog auth login` again, and update openclaw.json with the new project details if needed.
+`gog auth add --manual --force-consent` again, and update openclaw.json with the new project details if needed.
 
 **gog auth tokens expire / need re-authentication**
 
@@ -249,33 +249,36 @@ Tokens expire every ~7 days because the Google Cloud OAuth consent screen is in
 "Testing" mode. Gateway reboots do NOT cause expiry — this is a Google policy for
 unverified apps using sensitive scopes (Gmail, Drive).
 
-Re-auth requires a browser. Since Spark has no display, use SSH port forwarding
-and an interactive terminal session from your Mac:
+Re-auth requires an interactive SSH session (for paste-back). Use `OAuth-renew.sh`
+on Spark — no port forwarding needed, `--manual` handles the browser step:
 
-**Step 1** — open an interactive SSH session with port forwarding (keep this terminal):
+**Step 1** — open an interactive SSH session to Spark:
 ```bash
-ssh -A -t -L 44339:localhost:44339 spark-ts
+ssh -t spark-ts
 ```
 
-**Step 2** — in that SSH session, run:
+**Step 2** — run the renewal script (no browser tunnel needed — `--manual` handles it):
+```bash
+bash ~/code/spark-ai-agents/OAuth-renew.sh
+```
+Or manually:
 ```bash
 export GOG_KEYRING_BACKEND=file
 export GOG_KEYRING_PASSWORD=$(cat ~/.config/gogcli/.gog_pw)
-gog auth login --account tpc26agent@gmail.com \
+gog auth add tpc26agent@gmail.com \
   --services drive,sheets,docs,gmail,contacts \
-  --force-consent
+  --manual --force-consent
 ```
 
-**Step 3** — when gog prints `visit: http://127.0.0.1:44339`, open that URL in your
-Mac browser (the `-L` tunnel forwards it to Spark's gog server).
+**Step 3** — gog prints a Google authorization URL. Open it in your browser and
+complete the Google login.
 
-**Step 4** — complete the Google login. When the browser redirects to
-`http://127.0.0.1:44339/callback?code=...` and the page fails to load, copy the
-full URL from the browser address bar and paste it into the SSH terminal. gog reads
-it from stdin and extracts the auth code.
+**Step 4** — when the browser redirects to a URL that fails to load, copy the full
+URL from the browser address bar and paste it into the SSH terminal. gog reads it
+from stdin and extracts the auth code.
 
-> **Why -t matters:** Running `ssh ... 'gog auth login'` non-interactively means gog
-> cannot read your pasted input. The `-t` flag allocates a pseudo-terminal so the
+> **Why -t matters:** Running `ssh ... 'bash OAuth-renew.sh'` non-interactively means
+> gog cannot read your pasted input. The `-t` flag allocates a pseudo-terminal so the
 > paste-back step works.
 
 Tokens auto-refresh when the sandbox has network access and credentials are mounted
