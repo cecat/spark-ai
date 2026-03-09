@@ -244,14 +244,25 @@ again: create a new GCP project, re-configure OAuth consent screen and credentia
 `gog auth login` again, and update openclaw.json with the new project details if needed.
 
 **gog auth tokens expire / need re-authentication**
-On the host:
+
+Tokens expire every ~7 days because the Google Cloud OAuth consent screen is in
+"Testing" mode. Gateway reboots do NOT cause expiry — this is a Google policy for
+unverified apps using sensitive scopes (Gmail, Drive).
+
+Re-auth requires a browser. Since Spark has no display, use SSH port forwarding
+to complete the OAuth flow from your Mac:
+
 ```bash
-export GOG_KEYRING_BACKEND=file
-export GOG_KEYRING_PASSWORD=sparkagent2026
-gog auth login --account chattpc26@gmail.com
+# From your Mac — tunnels port 44339 and runs gog auth
+ssh -A -L 44339:localhost:44339 spark-ts \
+  'GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD=sparkagent2026 gog auth login --account tpc26agent@gmail.com'
 ```
-Tokens auto-refresh when the sandbox has network access and the credentials are mounted
-read-write. If token refresh fails, re-auth on the host as above.
+
+Then immediately open **http://127.0.0.1:44339** in your Mac browser and complete
+the Google login. The SSH tunnel forwards Spark's OAuth callback port to your Mac.
+
+Tokens auto-refresh when the sandbox has network access and credentials are mounted
+read-write. If auto-refresh fails (i.e. 7 days have passed), re-auth as above.
 
 ---
 
