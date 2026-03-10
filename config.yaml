@@ -1,0 +1,24 @@
+# config.yaml — Agent model assignments
+#
+# Edit this file to change which model each agent uses, then run:
+#   ./apply-config.sh
+#
+# Model format: provider/model-id
+#
+# Available providers:
+#   anthropic  — Anthropic cloud API (requires anthropic_api_key in secrets.yaml)
+#   vllm       — Local model on Spark (no API key required)
+#
+# Anthropic models (current as of 2026-03):
+#   anthropic/claude-haiku-4-5      fast and cheap
+#   anthropic/claude-sonnet-4-6     balanced (recommended default)
+#   anthropic/claude-opus-4-6       most capable, slowest/most expensive
+#
+# Local vLLM model:
+#   vllm/Qwen/Qwen3-Coder-Next-FP8
+
+agents:
+  main:
+    model: anthropic/claude-sonnet-4-6
+  chattpc26:
+    model: anthropic/claude-sonnet-4-6

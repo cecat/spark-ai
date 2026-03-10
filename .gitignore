@@ -1,6 +1,7 @@
 # Never commit these
 *.env
 .env*
+secrets.yaml
 **/secrets/
 **/.openclaw/
 **/nim-cache/
