@@ -10,6 +10,13 @@ Usage:
 
 Requirements:
     pip install --break-system-packages pyyaml
+
+How OpenClaw handles providers:
+    - Anthropic: native support — API key goes in openclaw.json env.ANTHROPIC_API_KEY,
+      no providers block needed. Model format: anthropic/claude-sonnet-4-6
+      Ref: https://docs.openclaw.ai/providers/anthropic
+    - vLLM: custom provider block under models.providers.vllm (already configured
+      via the onboarding wizard — this script does not touch it)
 """
 
 import json
@@ -22,14 +29,6 @@ CONFIG_PATH = os.path.join(SCRIPT_DIR, "config.yaml")
 SECRETS_PATH = os.path.join(SCRIPT_DIR, "secrets.yaml")
 COMPOSE_FILE = os.path.join(SCRIPT_DIR, "openclaw", "docker-compose.yml")
 VOLUME_NAME = "openclaw_openclaw-config"
-
-# Anthropic models to register in openclaw.json when the anthropic provider is used.
-# Extend this list as Anthropic releases new models.
-ANTHROPIC_MODELS = [
-    {"id": "claude-haiku-4-5",  "name": "claude-haiku-4-5",  "contextWindow": 200000, "maxTokens": 8192},
-    {"id": "claude-sonnet-4-6", "name": "claude-sonnet-4-6", "contextWindow": 200000, "maxTokens": 8192},
-    {"id": "claude-opus-4-6",   "name": "claude-opus-4-6",   "contextWindow": 200000, "maxTokens": 32768},
-]
 
 # ---------------------------------------------------------------------------
 
@@ -113,37 +112,23 @@ def main():
         print(e.stderr)
         sys.exit(1)
 
-    # --- Ensure models structure exists ---
-    ocjson.setdefault("models", {})
-    ocjson["models"].setdefault("mode", "merge")
-    ocjson["models"].setdefault("providers", {})
-    providers = ocjson["models"]["providers"]
-
-    # --- Add/update anthropic provider ---
-    if "anthropic" in needed_providers:
-        providers["anthropic"] = {
-            "baseUrl": "https://api.anthropic.com",
-            "apiKey": secrets["anthropic_api_key"],
-            "api": "anthropic-messages",
-            "models": [
-                {
-                    "id": m["id"],
-                    "name": m["name"],
-                    "reasoning": False,
-                    "input": ["text"],
-                    "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
-                    "contextWindow": m["contextWindow"],
-                    "maxTokens": m["maxTokens"],
-                }
-                for m in ANTHROPIC_MODELS
-            ],
-        }
-        print("  Updated anthropic provider (API key set, models registered)")
-
-    # Remove anthropic provider if no longer needed
-    if "anthropic" not in needed_providers and "anthropic" in providers:
+    # --- Clean up any stale custom anthropic provider block (not needed for native support) ---
+    providers = ocjson.get("models", {}).get("providers", {})
+    if "anthropic" in providers:
         del providers["anthropic"]
-        print("  Removed anthropic provider (no agents using it)")
+        print("  Removed stale models.providers.anthropic block (using native support instead)")
+
+    # --- Manage ANTHROPIC_API_KEY in openclaw.json env section ---
+    ocjson.setdefault("env", {})
+    if "anthropic" in needed_providers:
+        ocjson["env"]["ANTHROPIC_API_KEY"] = secrets["anthropic_api_key"]
+        print("  Set env.ANTHROPIC_API_KEY")
+    else:
+        if "ANTHROPIC_API_KEY" in ocjson["env"]:
+            del ocjson["env"]["ANTHROPIC_API_KEY"]
+            print("  Removed env.ANTHROPIC_API_KEY (no agents using Anthropic)")
+        if not ocjson["env"]:
+            del ocjson["env"]  # clean up empty env block
 
     # --- Update per-agent model assignments ---
     agents_list = ocjson.get("agents", {}).get("list", [])
