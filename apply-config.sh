@@ -9,7 +9,7 @@ Usage:
     ./apply-config.sh [--dry-run]
 
 Requirements:
-    pip install pyyaml        (or: sudo apt install python3-yaml)
+    pip install --break-system-packages pyyaml
 """
 
 import json
@@ -37,7 +37,7 @@ def load_yaml(path):
     try:
         import yaml
     except ImportError:
-        print("ERROR: pyyaml not installed. Run: pip install pyyaml")
+        print("ERROR: pyyaml not installed. Run: pip install --break-system-packages pyyaml")
         sys.exit(1)
     with open(path) as f:
         return yaml.safe_load(f)
