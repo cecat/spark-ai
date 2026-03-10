@@ -122,8 +122,9 @@ def main():
     # --- Add/update anthropic provider ---
     if "anthropic" in needed_providers:
         providers["anthropic"] = {
+            "baseUrl": "https://api.anthropic.com",
             "apiKey": secrets["anthropic_api_key"],
-            "api": "anthropic",
+            "api": "anthropic-messages",
             "models": [
                 {
                     "id": m["id"],
