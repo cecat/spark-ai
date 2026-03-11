@@ -198,11 +198,14 @@ vim ~/code/spark-ai/config.yaml      # set model: anthropic/claude-sonnet-4-6
 ~/code/spark-ai/revert-to-local.sh
 ```
 
-**After applying, always confirm the gateway started cleanly:**
+**After applying:** `apply-config.sh` watches gateway logs for 20 seconds automatically.
+If it detects a crash-loop ("Config invalid" or similar), it invokes `revert-to-local.sh`
+and exits non-zero. You'll see exactly what went wrong. No manual log-watching needed.
+
+To check gateway health manually:
 ```bash
 docker logs openclaw-gateway --tail 20
 # Look for: [gateway] agent model: anthropic/... or vllm/...
-# A crash-loop here means the config is bad — run revert-to-local.sh immediately.
 ```
 
 ---

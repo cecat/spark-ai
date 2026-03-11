@@ -23,12 +23,17 @@ import json
 import subprocess
 import sys
 import os
+import time
+from datetime import datetime, timezone
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(SCRIPT_DIR, "config.yaml")
 SECRETS_PATH = os.path.join(SCRIPT_DIR, "secrets.yaml")
 COMPOSE_FILE = os.path.join(SCRIPT_DIR, "openclaw", "docker-compose.yml")
+REVERT_SCRIPT = os.path.join(SCRIPT_DIR, "revert-to-local.sh")
 VOLUME_NAME = "openclaw_openclaw-config"
+HEALTH_CHECK_SECONDS = 20      # how long to watch logs after restart
+HEALTH_POLL_INTERVAL = 3       # seconds between log checks
 
 # ---------------------------------------------------------------------------
 
@@ -64,6 +69,46 @@ def restart_gateway():
         ["docker", "compose", "-f", COMPOSE_FILE, "restart", "openclaw-gateway"],
         check=True,
     )
+
+
+# Patterns that indicate OpenClaw rejected the config and is crash-looping
+CRASH_PATTERNS = [
+    "Config invalid",
+    "config invalid",
+    "ZodError",           # Zod schema validation failure
+    "Cannot find module", # JS import failure (misconfigured provider module)
+    "SyntaxError",        # malformed JSON passed to the gateway
+]
+
+
+def watch_for_crash_loop(timeout=HEALTH_CHECK_SECONDS, poll=HEALTH_POLL_INTERVAL):
+    """
+    Poll openclaw-gateway logs for `timeout` seconds looking for config errors.
+    Returns (crashed: bool, evidence: str).
+    Ctrl-C skips the check without triggering a revert.
+    """
+    # Capture a baseline timestamp so --since only returns post-restart logs
+    since = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    deadline = time.time() + timeout
+
+    print(f"  Watching gateway logs for {timeout}s (Ctrl-C to skip)...", flush=True)
+    try:
+        while time.time() < deadline:
+            time.sleep(poll)
+            result = subprocess.run(
+                ["docker", "compose", "-f", COMPOSE_FILE, "logs",
+                 "--no-color", f"--since={since}", "openclaw-gateway"],
+                capture_output=True, text=True,
+            )
+            logs = result.stdout + result.stderr
+            for pattern in CRASH_PATTERNS:
+                if pattern in logs:
+                    return True, f"'{pattern}' detected in logs"
+    except KeyboardInterrupt:
+        print("\n  (health check skipped by user)")
+        return False, "skipped"
+
+    return False, "clean"
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +203,17 @@ def main():
     print("Restarting openclaw-gateway...")
     restart_gateway()
 
+    # --- Post-restart health check ---
+    crashed, reason = watch_for_crash_loop()
+    if crashed:
+        print(f"\nWARNING: crash-loop detected ({reason})")
+        print("  Auto-reverting to local vLLM model via revert-to-local.sh ...")
+        subprocess.run([sys.executable, REVERT_SCRIPT], check=True)
+        print("\nGateway restored to local vLLM model.")
+        print("Fix the config error above, then re-run ./apply-config.sh.")
+        sys.exit(1)
+
+    print("  Gateway looks healthy.")
     print("\nDone. Agents are now using:")
     for agent_id, agent_cfg in agents_config.items():
         print(f"  {agent_id:12s}  {agent_cfg['model']}")
