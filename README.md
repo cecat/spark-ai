@@ -46,6 +46,11 @@ The entire `spark-ai-agents/` directory is mounted into the OpenClaw container. 
 │   ├── TROUBLESHOOT.md
 │   ├── PLAN.md
 │   ├── TODO-PLAN.md             # design rationale for agent self-scheduling
+│   ├── config.yaml              # per-agent model assignments — see "Model configuration"
+│   ├── secrets.yaml             # not committed — API keys; copy from secrets.yaml.example
+│   ├── secrets.yaml.example     # template for secrets.yaml
+│   ├── apply-config.sh          # apply config.yaml and restart gateway
+│   ├── revert-to-local.sh       # emergency fallback to local vLLM model
 │   ├── check_openclaw.sh        # check for OpenClaw updates (no pull without --update)
 │   ├── check_model.sh           # check for model updates (no download without --update)
 │   ├── qwen3-coder-next/
@@ -350,6 +355,90 @@ mkdir -p ~/code/spark-ai-agents/shared/sessions ~/code/spark-ai-agents/shared/se
 The reset script archives any session `.jsonl` file above 512 KB to `shared/session-archives/YYYY-MM-DD/` and truncates it to zero. The agent starts fresh from its structured `.md` files on the next heartbeat or user message. Archives are kept on the host if you ever need to review past conversation history.
 
 See `TROUBLESHOOT.md` → Slack latency and `spark-ai-agents/RUNBOOK.md` → Session Management for background and manual reset commands.
+
+---
+
+## Model configuration
+
+By default all agents use the local vLLM model running on the Spark. `config.yaml`
+controls which model each agent uses. You can switch any agent to a remote API
+(e.g. Anthropic Claude) without touching `docker-compose.yml` or `openclaw.json`
+by hand.
+
+### Setup (first time)
+
+```bash
+cp secrets.yaml.example secrets.yaml
+vim secrets.yaml        # paste your Anthropic API key if using a remote model
+```
+
+`secrets.yaml` is gitignored — it never leaves the Spark.
+
+### config.yaml
+
+The default config uses the local model for all agents:
+
+```yaml
+agents:
+  main:
+    model: vllm/Qwen/Qwen3-Coder-Next-FP8
+  chattpc26:
+    model: vllm/Qwen/Qwen3-Coder-Next-FP8
+```
+
+To switch an agent to Anthropic Claude, change its model:
+
+```yaml
+agents:
+  main:
+    model: anthropic/claude-sonnet-4-6
+  chattpc26:
+    model: vllm/Qwen/Qwen3-Coder-Next-FP8
+```
+
+**Supported providers:**
+
+| Provider | Model format | Requires |
+|---|---|---|
+| Local vLLM | `vllm/Qwen/Qwen3-Coder-Next-FP8` | Nothing — always available |
+| Anthropic | `anthropic/claude-haiku-4-5` | `anthropic_api_key` in `secrets.yaml` |
+| Anthropic | `anthropic/claude-sonnet-4-6` | `anthropic_api_key` in `secrets.yaml` |
+| Anthropic | `anthropic/claude-opus-4-6` | `anthropic_api_key` in `secrets.yaml` |
+
+### Applying changes
+
+After editing `config.yaml`:
+
+```bash
+./apply-config.sh --dry-run   # preview what will change
+./apply-config.sh             # apply and restart gateway
+```
+
+The script patches `openclaw.json` in the Docker volume directly — no manual config
+editing needed. The gateway restarts automatically.
+
+### Emergency revert to local model
+
+If anything goes wrong after switching to a remote model:
+
+```bash
+./revert-to-local.sh
+```
+
+This removes all remote-model config from `openclaw.json` and restarts the gateway.
+No config files needed — safe to run any time.
+
+### Note on vLLM and memory
+
+The Spark's 128 GB is unified CPU+GPU memory. vLLM loads the model on startup and
+holds ~107 GB regardless of whether agents are actively using it. If all agents are
+switched to Anthropic, you can stop vLLM to reclaim that memory:
+
+```bash
+cd ~/code/spark-ai/qwen3-coder-next && docker compose down
+```
+
+Restart it again before switching any agent back to `vllm/...`.
 
 ---
 

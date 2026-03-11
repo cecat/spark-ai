@@ -2,6 +2,14 @@
 
 All changes to documentation files in this repo.
 
+## 2026-03-10
+- `config.yaml`: added — per-agent model assignment config; default is local vLLM
+- `secrets.yaml.example`: added — template for API credentials (copy to `secrets.yaml`, gitignored)
+- `apply-config.sh`: added — reads `config.yaml` + `secrets.yaml`, patches `openclaw.json` in the Docker volume, and restarts the gateway; supports `--dry-run`
+- `revert-to-local.sh`: added — emergency fallback; strips all remote-model config from `openclaw.json` and restarts the gateway; no config files needed
+- `.gitignore`: added `secrets.yaml`
+- `README.md`: added "Model configuration" section documenting per-agent model switching
+
 ## 2026-03-03
 - README.md: added PATHS.md to agent workspace structure diagram (both agents)
 - README.md: updated "Adding a new agent" step 2 — added PATHS.md guidance and absolute path warning
