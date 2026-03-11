@@ -9,6 +9,8 @@
 - [Quick log commands](#quick-log-commands)
 - [Qwen / vLLM](#qwen--vllm)
 - [OpenClaw — Gateway](#openclaw--gateway)
+- [OpenClaw — Gateway crash-loop and SSH freezing](#openclaw--gateway-crash-loop-and-ssh-freezing)
+- [OpenClaw — Model configuration](#openclaw--model-configuration)
 - [OpenClaw — Slack](#openclaw--slack)
 - [OpenClaw — Slack latency and session management](#openclaw--slack-latency-and-session-management)
 - [OpenClaw — Google / gog](#openclaw--google--gog)
@@ -133,6 +135,74 @@ docker run --rm --network qwen3-coder-next_nim_net curlimages/curl:latest http:/
 **iptables rules lost after reboot**
 ```bash
 sudo apt install iptables-persistent -y && sudo netfilter-persistent save
+```
+
+---
+
+## OpenClaw — Gateway crash-loop and SSH freezing
+
+**Symptom:** SSH sessions freeze mid-command or hang on connect. New SSH connections
+time out or freeze after a few keystrokes. The console is responsive. `docker ps`
+shows the openclaw-gateway container restarting repeatedly.
+
+**Cause:** Docker rewrites its iptables NAT and FORWARD rules every time a container
+starts or stops. This is normal Docker behavior and happens regardless of the security
+rules in the DOCKER-USER chain (Step 9). During a crash-loop, these rewrites happen
+dozens of times per minute, creating brief windows where packet routing breaks. Active
+SSH sessions stall waiting for ACKs that can't get through during those windows. The
+connection isn't dropped — it just freezes.
+
+Docker's exponential backoff eventually slows the loop, which is why SSH may become
+intermittently functional (you connect, type a few characters, then it freezes) rather
+than completely dead.
+
+**Diagnose:**
+```bash
+docker logs openclaw-gateway --tail 30    # look for repeated "Config invalid" or startup errors
+docker ps                                  # check container status and restart count
+```
+
+**Fix:** Resolve whatever is making the gateway fail to start, then restart it cleanly.
+The most common cause is a bad `openclaw.json` — use the emergency revert:
+
+```bash
+# Revert to local vLLM model and clear any bad remote-model config:
+~/code/spark-ai/revert-to-local.sh
+
+# Then verify the gateway came up cleanly:
+docker logs openclaw-gateway --tail 20
+```
+
+`revert-to-local.sh` reads the current `openclaw.json` directly from the Docker volume
+and removes Anthropic config in place — no snapshot or backup file needed. It works
+as long as Docker is running.
+
+If the gateway still won't start after reverting, see the crash loop entry in
+[OpenClaw — Gateway](#openclaw--gateway) above.
+
+---
+
+## OpenClaw — Model configuration
+
+See `README.md` → Model configuration for the full workflow. Quick reference:
+
+**Switch agents to Anthropic:**
+```bash
+vim ~/code/spark-ai/config.yaml      # set model: anthropic/claude-sonnet-4-6
+./apply-config.sh --dry-run          # verify before applying
+./apply-config.sh
+```
+
+**Revert all agents to local vLLM (emergency):**
+```bash
+~/code/spark-ai/revert-to-local.sh
+```
+
+**After applying, always confirm the gateway started cleanly:**
+```bash
+docker logs openclaw-gateway --tail 20
+# Look for: [gateway] agent model: anthropic/... or vllm/...
+# A crash-loop here means the config is bad — run revert-to-local.sh immediately.
 ```
 
 ---
