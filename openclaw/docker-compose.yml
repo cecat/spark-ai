@@ -9,7 +9,9 @@
 #
 # DO NOT change the ports: binding to 0.0.0.0 — this would expose the gateway
 #   to your LAN and potentially the internet.
-# DO NOT add volume mounts for ~/.ssh, ~/, /etc, or any credential-containing paths.
+# DO NOT add volume mounts for ~/.ssh, ~/, or /etc.
+# Credential mounts (gogcli, slack) are explicitly listed below — add others only
+# in the same pattern (specific ~/.config/<tool> subdir, read-only).
 # DO NOT override the user: directive — OpenClaw must run as non-root (node/uid 1000).
 # See README.md for full security notes.
 
@@ -41,6 +43,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # gog credentials — read-only, for Google Workspace access
       - /home/catlett/.config/gogcli:/home/catlett/.config/gogcli:ro
+      # Slack bot token — read-only, for posting to Slack via send-slack-posts.sh
+      - /home/catlett/.config/slack:/home/catlett/.config/slack:ro
       # gog skills
       - /home/catlett/.agents:/home/node/.agents:ro
     environment:
