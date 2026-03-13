@@ -97,6 +97,7 @@ The entire `spark-ai-agents/` directory is mounted into the OpenClaw container. 
     │   └── templates/           # email templates (JSON)
     ├── scripts/
     │   ├── send-approved-emails.sh  # cron: sends approved outbox emails via gog
+    │   ├── send-slack-posts.sh      # cron: sends pending outbox Slack posts via bot token
     │   ├── check-todos.sh           # cron: marks due TODO items READY for heartbeat
     │   ├── monitor-sessions.sh      # cron: logs session file sizes every 5 min
     │   └── reset-sessions.sh        # cron: archives and clears large sessions at 4am
@@ -104,6 +105,8 @@ The entire `spark-ai-agents/` directory is mounted into the OpenClaw container. 
         ├── outbox/              # pending email JSON files
         ├── sent/                # sent email archive
         ├── rejected/            # rejected emails
+        ├── slack-outbox/        # pending Slack post JSON files
+        ├── slack-sent/          # sent Slack post archive
         ├── todos/
         │   ├── todo.log         # append-only task execution log
         │   └── plans/           # complex task plan files (*.md)
@@ -314,6 +317,27 @@ See `openclaw/SLACK_README.md` for the complete walkthrough. Summary:
 - Add bot token and app token to openclaw.json under `channels.slack`
 - For multiple agents, use `bindings` in openclaw.json to route specific channels to specific agents
 
+**Outbound (agent-initiated) Slack posts:** OpenClaw agents can reply to active sessions, but cannot initiate posts to a channel when no session is active (e.g., scheduled overnight summaries). Use the outbox pattern instead:
+
+1. Store your bot's OAuth token (`xoxb-...`) on Spark:
+   ```bash
+   mkdir -p ~/.config/slack
+   echo 'xoxb-YOUR-TOKEN' > ~/.config/slack/bot_token && chmod 600 ~/.config/slack/bot_token
+   ```
+   The `docker-compose.yml` in this repo already mounts `~/.config/slack` into the gateway read-only (same pattern as gogcli credentials).
+
+2. Add the cron entry on Spark (`crontab -e`):
+   ```
+   */5 * * * * /home/catlett/code/spark-ai-agents/scripts/send-slack-posts.sh >> /home/catlett/code/spark-ai-agents/shared/send-slack.log 2>&1
+   ```
+
+3. Create the outbox directories:
+   ```bash
+   mkdir -p ~/code/spark-ai-agents/shared/slack-outbox ~/code/spark-ai-agents/shared/slack-sent
+   ```
+
+Agents write JSON files to `shared/slack-outbox/` (`channel`, `text`, `status: "pending"`). The cron script posts them via `chat.postMessage` and archives to `shared/slack-sent/`. No human approval step — suitable for automated, low-risk internal channel posts.
+
 > **Slack is a prerequisite for steps 12 and 13.** Steps 12 (Google/gog) and 13 (TODO scheduling) are independent of each other — you can do either, both, or neither.
 
 ### 12. Connect Google Workspace via gog (optional)
@@ -346,6 +370,19 @@ Two scripts in `spark-ai-agents/scripts/` handle this (already committed — jus
 */5 * * * * /home/catlett/code/spark-ai-agents/scripts/monitor-sessions.sh >> /home/catlett/code/spark-ai-agents/shared/sessions/cron.log 2>&1
 0 4 * * * /home/catlett/code/spark-ai-agents/scripts/reset-sessions.sh >> /home/catlett/code/spark-ai-agents/shared/sessions/cron.log 2>&1
 ```
+
+**Full crontab reference** — all host-side cron scripts for this stack:
+
+```
+TZ=America/Chicago
+*/30 * * * * /home/catlett/code/spark-ai-agents/scripts/send-approved-emails.sh
+*/5  * * * * /home/catlett/code/spark-ai-agents/scripts/send-slack-posts.sh >> /home/catlett/code/spark-ai-agents/shared/send-slack.log 2>&1
+*/5  * * * * /home/catlett/code/spark-ai-agents/scripts/check-todos.sh >> /home/catlett/code/spark-ai-agents/shared/todos/cron.log 2>&1
+*/5  * * * * /home/catlett/code/spark-ai-agents/scripts/monitor-sessions.sh >> /home/catlett/code/spark-ai-agents/shared/sessions/cron.log 2>&1
+0 4  * * * * /home/catlett/code/spark-ai-agents/scripts/reset-sessions.sh >> /home/catlett/code/spark-ai-agents/shared/sessions/cron.log 2>&1
+```
+
+All scripts run on the **Spark host** as `catlett` — not inside any Docker container.
 
 Create the required directories on Spark:
 ```bash

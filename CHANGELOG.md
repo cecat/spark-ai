@@ -2,6 +2,13 @@
 
 All changes to documentation files in this repo.
 
+## 2026-03-13
+- `openclaw/docker-compose.yml`: added read-only mount of `~/.config/slack` into gateway — same pattern as existing gogcli credential mount; required by `send-slack-posts.sh` cron script for Slack bot token access
+- `openclaw/docker-compose.yml`: tightened security comment to clarify that scoped `~/.config/<tool>` mounts are the established credential pattern (not a blanket prohibition)
+- `README.md`: updated repo tree to include `send-slack-posts.sh` and `shared/slack-outbox/`, `shared/slack-sent/` directories
+- `README.md`: added outbound Slack post setup to Step 11 (Connect Slack) — bot token storage, cron entry, outbox directories
+- `README.md`: added full crontab reference to Step 14 (session management) documenting all five host-side cron scripts
+
 ## 2026-03-10
 - `config.yaml`: added — per-agent model assignment config; default is local vLLM
 - `secrets.yaml.example`: added — template for API credentials (copy to `secrets.yaml`, gitignored)
