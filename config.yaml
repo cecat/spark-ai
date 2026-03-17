@@ -20,6 +20,8 @@
 
 agents:
   main:
-    model: anthropic/claude-sonnet-4-6
+    model: vllm/Qwen/Qwen3-Coder-Next-FP8
   chattpc26:
-    model: anthropic/claude-haiku-4-5
+    model: vllm/Qwen/Qwen3-Coder-Next-FP8
+  cecat:
+    model: vllm/Qwen/Qwen3-Coder-Next-FP8
