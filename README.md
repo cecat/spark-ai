@@ -20,11 +20,12 @@ vLLM serving Qwen3-Coder-Next-FP8 + OpenClaw agent. Model API is Docker-internal
 ```
 
 > **Model throughput note:** Qwen3-Coder-Next-FP8 runs at ~50 tps on the DGX Spark GB10.
-> This is adequate for interactive chat and async workloads, but requires active session
-> management: OpenClaw sends the full conversation history on every inference call, and
-> prefill time grows with context size. Without daily session resets, a busy channel
-> accumulates enough history to cause multi-minute delays within a few weeks.
-> See Step 14 and `TROUBLESHOOT.md` → Slack latency for details.
+> This figure applies to **output generation** only. Input processing (prefill) is parallel
+> and typically completes in 1–3 seconds for a typical agent context, so TTFT remains
+> interactive even with large system prompts. The latency risk is unbounded **session history**:
+> OpenClaw replays the full conversation on every call, and very long sessions cause
+> multi-minute prefill times. Daily session resets prevent this.
+> See `ARCHITECTURE.md` → "LLM Inference: Prefill vs. Generation" for the full explanation.
 
 ---
 

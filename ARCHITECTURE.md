@@ -224,3 +224,55 @@ OpenClaw heartbeat (every 15 min)
 | `check-todos.sh` | `scripts/` (shared) | Human | Bash scheduler — promotes due items to READY |
 | `<tool>.py` / `<tool>.sh` | `scripts/` (shared) | Human | Deterministic tools called by agent via exec |
 | `calendar-state.json` | Runtime state (shared) | `check-todos.sh` | Last-fired timestamps (dedup) |
+
+---
+
+## LLM Inference: Prefill vs. Generation (Why TTFT Is Interactive)
+
+The DGX Spark GB10 runs Qwen3-Coder-Next-FP8 at approximately 50 tokens/second.
+A common and reasonable concern: if each agent interaction sends 40,000+ characters
+of system prompt plus conversation history (~10,000+ tokens), does that mean
+10,000 ÷ 50 = 200 seconds before any output appears? No — because the 50 tps figure
+applies only to **output generation**, not to **input processing**. These are
+physically different operations.
+
+### Phase 1 — Prefill (processing the input)
+
+All input tokens are processed **in parallel** as a single large matrix multiplication
+across the GPU. Because every input token is known before generation begins, the GPU
+computes attention for all positions simultaneously, saturating its parallel compute
+capacity. For 10,000 input tokens, prefill takes roughly **1–3 seconds** on the GB10.
+Time To First Token (TTFT) equals the prefill time — the user sees output as soon as
+prefill completes.
+
+### Phase 2 — Generation (producing the output)
+
+Each output token depends on the previous one, so generation is **sequential**.
+Every step requires loading the full model weight matrix from memory — a
+memory-bandwidth-bound operation that runs at ~50 tokens/second. A 200-token
+response takes about 4 seconds to generate.
+
+### The Math
+
+| Phase | Tokens | Mechanism | Approximate time |
+|-------|--------|-----------|-----------------|
+| Prefill (input) | ~10,000 | Parallel GPU matrix ops | 1–3 seconds |
+| Generation (output) | ~200 | Sequential, memory-bandwidth-bound | ~4 seconds |
+| **Total to complete response** | | | **~5–7 seconds** |
+
+Doubling the input context from 10K to 20K tokens adds ~1–2 seconds to prefill,
+not minutes. The 150K-token system prompt budget OpenClaw supports would take
+roughly 15–30 seconds to prefill — fast, not the hours the naive calculation implies.
+
+### Why Session History Eventually Causes Latency
+
+Session history is where context size genuinely hurts. A Slack channel with months
+of conversation history can accumulate tens of thousands of turns. Unlike the
+system prompt (which is bounded by the 150K budget), session history grows without
+a hard cap until the session is reset. A session of several hundred thousand tokens
+will produce multi-minute prefill times regardless of GPU speed.
+
+This is why `reset-sessions.sh` runs nightly: not to reduce system prompt size
+(which is already bounded), but to prevent unbounded session history growth.
+See `spark-ai-agents/ARCHITECTURE.md` → OpenClaw Context Architecture for the
+full details on what gets loaded, caps, and behavioral implications for agents.
