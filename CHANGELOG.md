@@ -2,6 +2,16 @@
 
 All changes to documentation files in this repo.
 
+## 2026-03-19
+- `config.yaml`: added `channels:` section — replaces `spark-ai-agents/CHANNELS.md` as
+  source of truth for Slack channel → agent bindings; each entry has `id` (channel ID),
+  `name` (human-readable label), and `agent`; default agent (main) handles DMs and unbound
+  channels without needing an explicit entry
+- `apply-config.sh`: extended to manage Slack channel bindings in addition to model
+  assignments; reads `channels:` from `config.yaml`, rebuilds the `bindings[]` array in
+  `openclaw.json` completely on each run; missing agent references produce a warning and
+  are skipped; adds summary printout of active bindings after apply; updated docstring
+
 ## 2026-03-13
 - `openclaw/docker-compose.yml`: added read-only mount of `~/.config/slack` into gateway — same pattern as existing gogcli credential mount; required by `send-slack-posts.sh` cron script for Slack bot token access
 - `openclaw/docker-compose.yml`: tightened security comment to clarify that scoped `~/.config/<tool>` mounts are the established credential pattern (not a blanket prohibition)

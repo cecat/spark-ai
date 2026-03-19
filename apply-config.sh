@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-apply-config.sh — Apply agent model assignments to the OpenClaw gateway.
+apply-config.sh — Apply agent configuration to the OpenClaw gateway.
 
 Reads config.yaml and secrets.yaml, patches openclaw.json in the Docker volume,
 and restarts the gateway.
@@ -11,12 +11,20 @@ Usage:
 Requirements:
     pip install --break-system-packages pyyaml
 
-How OpenClaw handles providers:
+Manages two sections of openclaw.json:
+
+  Model assignments (config.yaml agents:):
     - Anthropic: native support — API key goes in openclaw.json env.ANTHROPIC_API_KEY,
       no providers block needed. Model format: anthropic/claude-sonnet-4-6
       Ref: https://docs.openclaw.ai/providers/anthropic
     - vLLM: custom provider block under models.providers.vllm (already configured
       via the onboarding wizard — this script does not touch it)
+
+  Slack channel bindings (config.yaml channels:):
+    - Replaces the entire bindings[] array in openclaw.json with the list from
+      config.yaml; each entry maps a Slack channel ID to an agent
+    - The default agent (marked "default": true in openclaw.json agents.list) handles
+      all DMs and any channel not in the bindings list
 """
 
 import json
@@ -190,6 +198,34 @@ def main():
                 print(f"  Agent '{agent_id}' → {model_str}")
                 break
 
+    # --- Update Slack channel bindings ---
+    channels_config = config.get("channels", [])
+    if channels_config:
+        print("Updating Slack channel bindings...")
+        new_bindings = []
+        for ch in channels_config:
+            channel_id = ch.get("id", "")
+            agent_id = ch.get("agent", "")
+            name = ch.get("name", channel_id)
+            if not channel_id or not agent_id:
+                print(f"  WARNING: channel entry missing id or agent — skipping: {ch}")
+                continue
+            if agent_id not in agent_ids_in_file:
+                print(f"  WARNING: agent '{agent_id}' for channel {name} not found in openclaw.json — skipping")
+                continue
+            new_bindings.append({
+                "agentId": agent_id,
+                "match": {
+                    "channel": "slack",
+                    "peer": {"kind": "channel", "id": channel_id}
+                }
+            })
+            print(f"  {name} ({channel_id}) → {agent_id}")
+        ocjson["bindings"] = new_bindings
+        print(f"  {len(new_bindings)} binding(s) written (default agent handles DMs and unbound channels)")
+    else:
+        print("No channels section in config.yaml — leaving bindings unchanged")
+
     # --- Write back ---
     if dry_run:
         print("\n[dry-run] Would write openclaw.json:")
@@ -217,6 +253,10 @@ def main():
     print("\nDone. Agents are now using:")
     for agent_id, agent_cfg in agents_config.items():
         print(f"  {agent_id:12s}  {agent_cfg['model']}")
+    if channels_config:
+        print("\nSlack channel bindings:")
+        for ch in channels_config:
+            print(f"  {ch.get('name', ch.get('id')):20s}  → {ch.get('agent')}")
 
 
 if __name__ == "__main__":

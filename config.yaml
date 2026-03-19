@@ -1,7 +1,9 @@
-# config.yaml — Agent model assignments
+# config.yaml — Agent configuration
 #
-# Edit this file to change which model each agent uses, then run:
+# Edit this file to change agent settings, then run:
 #   ./apply-config.sh
+#
+# ── Model assignments ────────────────────────────────────────────────────────
 #
 # Model format: provider/model-id
 #
@@ -10,7 +12,7 @@
 #   vllm       — Local model on Spark (no API key required)
 #
 # Anthropic models (current as of 2026-03):
-#   (cost is $in/$out per million tokens
+#   (cost is $in/$out per million tokens)
 #   anthropic/claude-haiku-4-5      fast and cheap ($1/$25)
 #   anthropic/claude-sonnet-4-6     balanced (recommended default) ($3/$15)
 #   anthropic/claude-opus-4-6       most capable, slowest/most expensive ($5/$5)
@@ -25,3 +27,29 @@ agents:
     model: vllm/Qwen/Qwen3-Coder-Next-FP8
   cecat:
     model: vllm/Qwen/Qwen3-Coder-Next-FP8
+
+# ── Slack channel → agent bindings ───────────────────────────────────────────
+#
+# Controls which agent handles each Slack channel. Maps to the `bindings` array
+# in openclaw.json. The default agent (main) handles all DMs and any channel
+# not listed here.
+#
+# To find a channel ID: right-click the channel in Slack → View channel details
+# → copy the ID from the bottom of the About tab (starts with C).
+#
+# Format:
+#   channels:
+#     - id: <channel-id>     # Slack channel ID (e.g. C09KGGMS116)
+#       name: "<name>"       # Human-readable label (not used by OpenClaw, for reference)
+#       agent: <agent-id>    # Agent that handles this channel
+
+channels:
+  - id: C09KGGMS116
+    name: "#tpc-openclaw"
+    agent: chattpc26
+  - id: C0AJ1EL2KJ5
+    name: "#openclaw-test"
+    agent: chattpc26
+  - id: C0AMYPF9NDN
+    name: "#cecat-test"
+    agent: cecat
