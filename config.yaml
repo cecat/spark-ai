@@ -53,3 +53,19 @@ channels:
   - id: C0AMYPF9NDN
     name: "#cecat-test"
     agent: cecat
+
+# ── Notify pipeline settings ─────────────────────────────────────────────────
+#
+# Used by run-notify.sh / notify.py for the daily sync and notification pipeline.
+# These values are extracted by run-notify.sh and passed as environment variables
+# into the Docker container — notify.py never reads config.yaml directly.
+#
+# dry_run_slack_channel_id: channel that receives [DRY RUN] Slack posts
+#   (test runs go here instead of #tpc-openclaw so real reports are not polluted)
+# system_owner_email: address that receives all emails during a dry run
+#   (replaces all track-leader / AI4S / WG-BOF recipients so no test mail goes
+#   to external collaborators)
+
+notify:
+  dry_run_slack_channel_id: C0AJ1EL2KJ5   # #openclaw-test
+  system_owner_email: catlett@anl.gov
