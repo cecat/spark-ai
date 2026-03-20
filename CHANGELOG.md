@@ -2,6 +2,15 @@
 
 All changes to documentation files in this repo.
 
+## 2026-03-20
+- `config.yaml`: added `notify:` section — deployment settings for the daily
+  sync/notification pipeline; `dry_run_slack_channel_id` (Slack channel for
+  `--dry-run` test posts, currently `#openclaw-test`) and `system_owner_email`
+  (email address that receives all redirected emails during a dry run); values
+  are extracted by `run-notify.sh` at startup and passed as Docker env vars
+  (`DRY_RUN_CHANNEL`, `SYSTEM_OWNER_EMAIL`) — `notify.py` reads them from the
+  environment so no YAML parser is needed inside the container
+
 ## 2026-03-19
 - `config.yaml`: added `channels:` section — replaces `spark-ai-agents/CHANNELS.md` as
   source of truth for Slack channel → agent bindings; each entry has `id` (channel ID),
