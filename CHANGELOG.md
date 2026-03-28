@@ -2,6 +2,28 @@
 
 All changes to documentation files in this repo.
 
+## 2026-03-28
+- `config.yaml`: added `defaults:` section with `fallback_model` — sets a global
+  fallback model for all agents; OpenClaw automatically retries with this model when
+  the primary is unreachable (connection refused, timeout, HTTP 5xx, rate limit);
+  default value is `vllm/Qwen/Qwen3-Coder-Next-FP8` so agents keep working if the
+  Argo tunnel goes down
+- `config.yaml`: added `#agent-main-test` (C0AMBT2GD97) channel binding → `main` agent
+- `apply-config.sh`: added global fallback model support — reads `defaults.fallback_model`
+  and writes it to `agents.defaults.model.fallbacks` in `openclaw.json`
+- `apply-config.sh`: fixed bug where adding a channel to `config.yaml channels:` updated
+  `bindings` but not `channels.slack.channels` (the event delivery allowlist); the script
+  now syncs both on every run — channels not in `config.yaml` are removed from the allowlist
+- `README.md`: updated "Model configuration" section — added `defaults.fallback_model`
+  docs and example; expanded supported providers table to include Argo models
+- `README.md`: updated "Adding a new agent" step 4 — `apply-config.sh` now handles both
+  `bindings` and `channels.slack.channels` automatically
+- `README.md`: updated "Multi-agent setup" — added note that both lists are managed by
+  `apply-config.sh` and should not be edited manually
+- `TROUBLESHOOT.md`: updated "Agent not responding in a channel" checklist to reflect that
+  `apply-config.sh` manages both `bindings` and `channels.slack.channels` in sync
+- `TROUBLESHOOT.md`: updated "Multi-agent routing not working" — same
+
 ## 2026-03-20
 - `config.yaml`: added `notify:` section — deployment settings for the daily
   sync/notification pipeline; `dry_run_slack_channel_id` (Slack channel for

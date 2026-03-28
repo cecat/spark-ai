@@ -27,6 +27,19 @@
 #   argo/argo:claude-4.6-opus       most capable           (no cost -- internal)
 #   argo/argo:claude-4.5-haiku      fast, lightweight      (no cost -- internal)
 
+# ── Defaults ─────────────────────────────────────────────────────────────────
+#
+# Global defaults applied to all agents.
+#
+# fallback_model: Model to use if the primary model is unreachable (tunnel down,
+#   provider outage, rate limit, etc.). OpenClaw tries the primary first, then
+#   falls back automatically on connection errors, timeouts, or 5xx responses.
+#   Leave unset to disable automatic fallback.
+#   Recommended: set to vllm (local) so agents keep working if Internet is lost.
+
+defaults:
+  fallback_model: vllm/Qwen/Qwen3-Coder-Next-FP8
+
 agents:
   main:
     model: vllm/Qwen/Qwen3-Coder-Next-FP8
@@ -49,7 +62,7 @@ agents:
 
 providers:
   argo:
-    baseUrl: "http://localhost:44497"
+    baseUrl: "http://172.18.0.1:44497"
     api: "anthropic-messages"
     models:
       - id: "argo:claude-4.6-sonnet"
@@ -90,6 +103,10 @@ channels:
   - id: C0AMYPF9NDN
     name: "#cecat-test"
     agent: cecat
+
+  - id: C0AMBT2GD97
+    name: "#agent-main-test"
+    agent: main
 
 # ── Notify pipeline settings ─────────────────────────────────────────────────
 #

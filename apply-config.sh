@@ -11,7 +11,12 @@ Usage:
 Requirements:
     pip install --break-system-packages pyyaml
 
-Manages three sections of openclaw.json:
+Manages four sections of openclaw.json:
+
+  Global defaults (config.yaml defaults:):
+    - fallback_model: written to agents.defaults.model.fallbacks — OpenClaw
+      automatically tries this model if the primary is unreachable (tunnel down,
+      provider outage, connection timeout, HTTP 5xx). Applies to all agents.
 
   Custom provider registration (config.yaml providers:):
     - Writes each custom provider's block into models.providers in openclaw.json
@@ -33,6 +38,9 @@ Manages three sections of openclaw.json:
   Slack channel bindings (config.yaml channels:):
     - Replaces the entire bindings[] array in openclaw.json with the list from
       config.yaml; each entry maps a Slack channel ID to an agent
+    - Also updates channels.slack.channels allowlist so the gateway actually
+      delivers events from each listed channel (both must be set for a channel
+      to work; this script keeps them in sync automatically)
     - The default agent (marked "default": true in openclaw.json agents.list) handles
       all DMs and any channel not in the bindings list
 """
@@ -180,6 +188,7 @@ def main():
     config = load_yaml(CONFIG_PATH)
     secrets = load_yaml(SECRETS_PATH)
 
+    defaults_config = config.get("defaults", {})
     agents_config = config.get("agents", {})
     providers_config = config.get("providers", {})
 
@@ -271,6 +280,24 @@ def main():
     if not ocjson["env"]:
         del ocjson["env"]
 
+    # --- Write global fallback model ---
+    fallback_model = defaults_config.get("fallback_model", "").strip()
+    ocjson.setdefault("agents", {}).setdefault("defaults", {})
+    defaults = ocjson["agents"]["defaults"]
+    if fallback_model:
+        existing_primary = defaults.get("model", {})
+        if isinstance(existing_primary, str):
+            existing_primary = {"primary": existing_primary}
+        existing_primary = dict(existing_primary) if existing_primary else {}
+        existing_primary["fallbacks"] = [fallback_model]
+        defaults["model"] = existing_primary
+        print(f"Setting global fallback model: {fallback_model}")
+    else:
+        # Clear fallbacks if not configured
+        if isinstance(defaults.get("model"), dict) and "fallbacks" in defaults["model"]:
+            del defaults["model"]["fallbacks"]
+            print("Cleared global fallback model (not set in config.yaml)")
+
     # --- Update per-agent model assignments ---
     print("Updating agent model assignments...")
     agents_list = ocjson.get("agents", {}).get("list", [])
@@ -312,6 +339,26 @@ def main():
             print(f"  {name} ({channel_id}) → {agent_id}")
         ocjson["bindings"] = new_bindings
         print(f"  {len(new_bindings)} binding(s) written (default agent handles DMs and unbound channels)")
+
+        # Sync the Slack channel allowlist (channels.slack.channels).
+        # Both bindings[] and this allowlist must include a channel for it to work.
+        slack_cfg = ocjson.get("channels", {}).get("slack", {})
+        if slack_cfg:
+            existing_slack_channels = slack_cfg.get("channels", {})
+            new_slack_channels = {}
+            for ch in channels_config:
+                channel_id = ch.get("id", "")
+                if not channel_id:
+                    continue
+                # Preserve existing per-channel settings (e.g. requireMention),
+                # defaulting to allow=True, requireMention=True for new entries.
+                existing = existing_slack_channels.get(channel_id, {})
+                new_slack_channels[channel_id] = existing if existing else {
+                    "allow": True,
+                    "requireMention": True,
+                }
+            slack_cfg["channels"] = new_slack_channels
+            print(f"  Slack channel allowlist synced: {', '.join(new_slack_channels.keys())}")
     else:
         print("No channels section in config.yaml — leaving bindings unchanged")
 
@@ -342,6 +389,8 @@ def main():
     print("\nDone. Agents are now using:")
     for agent_id, agent_cfg in agents_config.items():
         print(f"  {agent_id:12s}  {agent_cfg['model']}")
+    if fallback_model:
+        print(f"  (fallback)    {fallback_model}")
     if channels_config:
         print("\nSlack channel bindings:")
         for ch in channels_config:

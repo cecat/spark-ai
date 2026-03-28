@@ -414,15 +414,28 @@ vim secrets.yaml        # paste your Anthropic API key if using a remote model
 
 ### config.yaml
 
-The default config uses the local model for all agents:
+The default config uses the local model for all agents with vLLM as the automatic
+fallback if any remote model is unreachable:
 
 ```yaml
+# Optional global defaults
+defaults:
+  fallback_model: vllm/Qwen/Qwen3-Coder-Next-FP8   # used if primary is unreachable
+
 agents:
   main:
     model: vllm/Qwen/Qwen3-Coder-Next-FP8
+  cecat:
+    model: argo/argo:claude-4.6-opus
   chattpc26:
     model: vllm/Qwen/Qwen3-Coder-Next-FP8
 ```
+
+**`defaults.fallback_model`** — OpenClaw automatically retries with this model when
+the primary is unreachable due to a connection error, timeout, HTTP 5xx, or rate
+limit. Applied globally to all agents. Recommended: always set to
+`vllm/Qwen/Qwen3-Coder-Next-FP8` so agents keep working if the Argo tunnel goes
+down or any remote provider has an outage. Leave unset to disable automatic fallback.
 
 To switch an agent to Anthropic Claude, change its model:
 
@@ -442,6 +455,9 @@ agents:
 | Anthropic | `anthropic/claude-haiku-4-5` | `anthropic_api_key` in `secrets.yaml` |
 | Anthropic | `anthropic/claude-sonnet-4-6` | `anthropic_api_key` in `secrets.yaml` |
 | Anthropic | `anthropic/claude-opus-4-6` | `anthropic_api_key` in `secrets.yaml` |
+| Argo (ANL) | `argo/argo:claude-4.6-opus` | `argo_api_key` in `secrets.yaml` + SSH tunnel |
+| Argo (ANL) | `argo/argo:claude-4.6-sonnet` | `argo_api_key` in `secrets.yaml` + SSH tunnel |
+| Argo (ANL) | `argo/argo:claude-4.5-haiku` | `argo_api_key` in `secrets.yaml` + SSH tunnel |
 
 ### Applying changes
 
@@ -493,7 +509,7 @@ Restart it again before switching any agent back to `vllm/...`.
 }
 ```
    Use the **host path** for workspace (see Step 8). Always include `workspaceAccess: "rw"` — per-agent sandbox config overrides defaults.
-4. To route a specific Slack channel to this agent, add a binding and add the channel to the allowlist — see `openclaw/SLACK_README.md`
+4. To route a specific Slack channel to this agent, add it to `config.yaml channels:` and run `./apply-config.sh`. The script automatically updates both the `bindings` array and the `channels.slack.channels` allowlist — both are required and are kept in sync.
 5. If the agent needs `exec` (e.g., for gog), add per-agent `sandbox.docker` config — do NOT disable sandbox. See `GOG.md`.
 6. After adding the agent to config, **remove any stale sandbox containers** and restart the gateway (see `TROUBLESHOOT.md` → Sandbox gotchas → Sandbox container lifecycle).
 
@@ -507,6 +523,10 @@ OpenClaw supports multiple agents behind a single Slack app. In `openclaw.json`:
 - One agent is marked `"default": true` — handles all unrouted messages including DMs
 - `bindings` — routes specific Slack channels to specific agents
 - `channels.slack.channels` — allowlist of channel IDs the bot will respond in (required when `groupPolicy: "allowlist"`)
+
+**Both `bindings` and `channels.slack.channels` must include a channel for it to work.**
+`apply-config.sh` manages both automatically from `config.yaml channels:` — never edit
+them by hand.
 
 See `openclaw/SLACK_README.md` for a worked example.
 

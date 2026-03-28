@@ -232,7 +232,9 @@ Bot cannot resolve channel names from IDs — cosmetic, does not affect message 
 **Agent not responding in a channel**
 Check in order:
 1. Bot invited: `/invite @BotName`
-2. Channel ID listed in `channels.slack.channels` with `"allow": true`
+2. Channel listed in `config.yaml channels:` and `./apply-config.sh` run — this
+   writes both the `bindings` entry (agent routing) and the `channels.slack.channels`
+   allowlist entry (event delivery); both are required and both are managed by the script
 3. `groupPolicy: "allowlist"` with an empty `channels` object blocks everything
 4. `@BotName` mention included (required when `requireMention: true`)
 5. Check logs: `docker logs openclaw-gateway --tail 50`
@@ -241,9 +243,10 @@ Check in order:
 Ensure `im:read` and `im:write` scopes are present. Reinstall the app after adding scopes.
 
 **Multi-agent routing not working**
-The `channels.slack.channels` allowlist controls access; `bindings` controls which agent
-handles a channel. Both must be configured — a channel in `bindings` but not in the
-allowlist will be silently ignored.
+The `channels.slack.channels` allowlist controls event delivery; `bindings` controls which
+agent handles a channel. Both must be configured — a channel in `bindings` but not in the
+allowlist will be silently ignored. Use `config.yaml channels:` + `./apply-config.sh` to
+keep both in sync automatically.
 
 ---
 
