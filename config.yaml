@@ -104,6 +104,10 @@ channels:
     name: "#cecat-test"
     agent: cecat
 
+  - id: C0AEFU5GX5Z
+    name: "#hackathon-cineca"
+    agent: chattpc26
+
   - id: C0AMBT2GD97
     name: "#agent-main-test"
     agent: main
