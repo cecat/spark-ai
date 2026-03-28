@@ -10,6 +10,8 @@
 # Available providers:
 #   anthropic  — Anthropic cloud API (requires anthropic_api_key in secrets.yaml)
 #   vllm       — Local model on Spark (no API key required)
+#   argo       — Argonne LCRC API gateway (requires argo_api_key in secrets.yaml)
+#                Requires active tunnel: ssh -N -L 8443:lambd5:443 <user>@lambda.lcrc.anl.gov
 #
 # Anthropic models (current as of 2026-03):
 #   (cost is $in/$out per million tokens)
@@ -19,6 +21,9 @@
 #
 # Local vLLM model:
 #   vllm/Qwen/Qwen3-Coder-Next-FP8
+#
+# Argonne Argo models (see providers.argo.models below for full list):
+#   argo/claude-sonnet-4-6
 
 agents:
   main:
@@ -27,6 +32,33 @@ agents:
     model: vllm/Qwen/Qwen3-Coder-Next-FP8
   cecat:
     model: vllm/Qwen/Qwen3-Coder-Next-FP8
+
+# ── Custom provider definitions ───────────────────────────────────────────────
+#
+# Defines providers that are not natively supported by OpenClaw (i.e. not
+# "anthropic" or "vllm"). Each provider block is written into openclaw.json
+# models.providers.{name} by apply-config.sh.
+#
+# API keys are read from secrets.yaml using the key {provider_name}_api_key.
+# (e.g. argo_api_key for the argo provider)
+#
+# Required fields per model: id, name, contextWindow, maxTokens
+# Defaults applied automatically: reasoning: false, input: [text], cost: all zeros
+
+providers:
+  argo:
+    baseUrl: "https://apps-dev.inside.anl.gov/argoapi"
+    api: "anthropic-messages"
+    models:
+      - id: claude-sonnet-4-6
+        name: "claude-sonnet-4-6 (Argo)"
+        contextWindow: 16000
+        maxTokens: 16000
+      # Add additional Argo models here as they become available:
+      # - id: <model-id>
+      #   name: "<display name> (Argo)"
+      #   contextWindow: <n>
+      #   maxTokens: <n>
 
 # ── Slack channel → agent bindings ───────────────────────────────────────────
 #
@@ -57,14 +89,6 @@ channels:
 # ── Notify pipeline settings ─────────────────────────────────────────────────
 #
 # Used by run-notify.sh / notify.py for the daily sync and notification pipeline.
-# These values are extracted by run-notify.sh and passed as environment variables
-# into the Docker container — notify.py never reads config.yaml directly.
-#
-# dry_run_slack_channel_id: channel that receives [DRY RUN] Slack posts
-#   (test runs go here instead of #tpc-openclaw so real reports are not polluted)
-# system_owner_email: address that receives all emails during a dry run
-#   (replaces all track-leader / AI4S / WG-BOF recipients so no test mail goes
-#   to external collaborators)
 
 notify:
   dry_run_slack_channel_id: C0AJ1EL2KJ5   # #openclaw-test
