@@ -23,7 +23,9 @@
 #   vllm/Qwen/Qwen3-Coder-Next-FP8
 #
 # Argonne Argo models (see providers.argo.models below for full list):
-#   argo/claude-sonnet-4-6
+#   argo/argo:claude-4.6-sonnet     balanced, recommended  (no cost -- internal)
+#   argo/argo:claude-4.6-opus       most capable           (no cost -- internal)
+#   argo/argo:claude-4.5-haiku      fast, lightweight      (no cost -- internal)
 
 agents:
   main:
@@ -50,15 +52,18 @@ providers:
     baseUrl: "https://apps-dev.inside.anl.gov/argoapi"
     api: "anthropic-messages"
     models:
-      - id: claude-sonnet-4-6
-        name: "claude-sonnet-4-6 (Argo)"
-        contextWindow: 16000
+      - id: "argo:claude-4.6-sonnet"
+        name: "claude-4.6-sonnet (Argo)"
+        contextWindow: 200000
         maxTokens: 16000
-      # Add additional Argo models here as they become available:
-      # - id: <model-id>
-      #   name: "<display name> (Argo)"
-      #   contextWindow: <n>
-      #   maxTokens: <n>
+      - id: "argo:claude-4.6-opus"
+        name: "claude-4.6-opus (Argo)"
+        contextWindow: 200000
+        maxTokens: 16000
+      - id: "argo:claude-4.5-haiku"
+        name: "claude-4.5-haiku (Argo)"
+        contextWindow: 200000
+        maxTokens: 16000
 
 # ── Slack channel → agent bindings ───────────────────────────────────────────
 #
