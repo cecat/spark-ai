@@ -33,7 +33,7 @@ agents:
   chattpc26:
     model: vllm/Qwen/Qwen3-Coder-Next-FP8
   cecat:
-    model: vllm/Qwen/Qwen3-Coder-Next-FP8
+    model: argo/argo:claude-4.6-opus
 
 # ── Custom provider definitions ───────────────────────────────────────────────
 #
@@ -49,7 +49,7 @@ agents:
 
 providers:
   argo:
-    baseUrl: "https://apps-dev.inside.anl.gov/argoapi"
+    baseUrl: "http://localhost:44497"
     api: "anthropic-messages"
     models:
       - id: "argo:claude-4.6-sonnet"
