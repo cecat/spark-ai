@@ -42,9 +42,9 @@ defaults:
 
 agents:
   main:
-    model: vllm/Qwen/Qwen3-Coder-Next-FP8
+    model: argo/argo:claude-4.6-sonnet
   chattpc26:
-    model: vllm/Qwen/Qwen3-Coder-Next-FP8
+    model: argo/argo:claude-4.6-haiku
   cecat:
     model: argo/argo:claude-4.6-opus
 
