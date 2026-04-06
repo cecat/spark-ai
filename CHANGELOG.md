@@ -2,6 +2,13 @@
 
 All changes to documentation files in this repo.
 
+## 2026-04-05
+
+- `openclaw/docker-compose.yml`: upgraded OpenClaw gateway image from 2026.2.17 →
+  2026.4.2 — pulled new image, ran `doctor --fix`, restarted gateway; all agents
+  (luoji, cecat, chattpc26) operational post-upgrade
+- `check_openclaw.sh`: no changes — used to confirm new image digest prior to pull
+
 ## 2026-03-28
 - `config.yaml`: added `defaults:` section with `fallback_model` — sets a global
   fallback model for all agents; OpenClaw automatically retries with this model when
