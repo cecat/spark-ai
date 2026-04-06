@@ -41,12 +41,12 @@ defaults:
   fallback_model: vllm/Qwen/Qwen3-Coder-Next-FP8
 
 agents:
-  main:
+  luoji:
     model: argo/argo:claude-4.6-sonnet
   chattpc26:
-    model: argo/argo:claude-4.6-haiku
+    model: argo/argo:claude-4.6-sonnet
   cecat:
-    model: argo/argo:claude-4.6-opus
+    model: argo/argo:claude-4.6-sonnet
 
 # ── Custom provider definitions ───────────────────────────────────────────────
 #
@@ -92,25 +92,42 @@ providers:
 #     - id: <channel-id>     # Slack channel ID (e.g. C09KGGMS116)
 #       name: "<name>"       # Human-readable label (not used by OpenClaw, for reference)
 #       agent: <agent-id>    # Agent that handles this channel
+#
+# Channels with full links
+# pc-tpc26:         https://trillionparam-5lp9574.slack.com/archives/C09KGGMS116
+# agent-chattpc26:  https://trillionparam-5lp9574.slack.com/archives/C0AJ1EL2KJ5
+# hackathon-cineca: https://trillionparam-5lp9574.slack.com/archives/C0AEFU5GX5Z       
+#
+# agent-cecat:      https://trillionparam-5lp9574.slack.com/archives/C0AMYPF9NDN
+#
+# agent-luoji:      https://trillionparam-5lp9574.slack.com/archives/C0AMBT2GD97
+# claws:            https://trillionparam-5lp9574.slack.com/archives/C0AQH73GEHM
 
 channels:
-  - id: C09KGGMS116
-    name: "#tpc-openclaw"
-    agent: chattpc26
-  - id: C0AJ1EL2KJ5
-    name: "#openclaw-test"
-    agent: chattpc26
-  - id: C0AMYPF9NDN
-    name: "#cecat-test"
-    agent: cecat
 
+    # agent chattpc26
+  - id: C09KGGMS116
+    name: "#pc-tpc25"
+    agent: chattpc26
   - id: C0AEFU5GX5Z
     name: "#hackathon-cineca"
     agent: chattpc26
+  - id: C0AJ1EL2KJ5
+    name: "#agent-chattpc26"
+    agent: chattpc26
 
+    # agent cecat
+  - id: C0AMYPF9NDN
+    name: "#agent-cecat"
+    agent: cecat
+
+    # agent luoji
   - id: C0AMBT2GD97
-    name: "#agent-main-test"
-    agent: main
+    name: "#agent-luoji"
+    agent: luoji
+  - id: C0AQH73GEHM
+    name: "#claws"
+    agent: luoji
 
 # ── Notify pipeline settings ─────────────────────────────────────────────────
 #

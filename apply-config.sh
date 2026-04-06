@@ -352,11 +352,13 @@ def main():
                     continue
                 # Preserve existing per-channel settings (e.g. requireMention),
                 # defaulting to allow=True, requireMention=True for new entries.
+                # If config.yaml specifies requireMention explicitly, honour it.
                 existing = existing_slack_channels.get(channel_id, {})
-                new_slack_channels[channel_id] = existing if existing else {
-                    "allow": True,
-                    "requireMention": True,
-                }
+                entry = existing if existing else {"allow": True, "requireMention": True}
+                if "requireMention" in ch:
+                    entry = dict(entry)
+                    entry["requireMention"] = ch["requireMention"]
+                new_slack_channels[channel_id] = entry
             slack_cfg["channels"] = new_slack_channels
             print(f"  Slack channel allowlist synced: {', '.join(new_slack_channels.keys())}")
     else:
