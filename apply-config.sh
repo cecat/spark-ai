@@ -35,6 +35,13 @@ Manages four sections of openclaw.json:
     - Custom providers (e.g. argo): defined in config.yaml providers: section,
       registered automatically. Model format: argo/model-id
 
+  Web tools (config.yaml tools:):
+    - tools.web.search: enabled/provider/apiKey -- sets tools.web.search in openclaw.json
+      Provider "brave" reads brave_search_api_key from secrets.yaml
+    - tools.web.fetch: enabled -- sets tools.web.fetch.enabled in openclaw.json
+    - Per-agent tools.deny: written to each agent entry to restrict tool access
+      (e.g. chattpc26 has web_search and web_fetch in its deny list)
+
   Slack channel bindings (config.yaml channels:):
     - Replaces the entire bindings[] array in openclaw.json with the list from
       config.yaml; each entry maps a Slack channel ID to an agent
@@ -239,6 +246,19 @@ def main():
             print(f"ERROR: '{key_name}' not set in secrets.yaml")
             sys.exit(1)
 
+    # --- Validate Brave Search API key if web search is configured ---
+    tools_web_cfg = config.get("tools", {}).get("web", {})
+    brave_needed = (
+        tools_web_cfg.get("search", {}).get("enabled", False) and
+        tools_web_cfg.get("search", {}).get("provider", "") == "brave"
+    )
+    if brave_needed:
+        brave_key = secrets.get("brave_search_api_key", "")
+        if not brave_key or brave_key == "REPLACE_ME":
+            print("ERROR: tools.web.search enabled with provider=brave but brave_search_api_key not set in secrets.yaml")
+            print("  Sign up at https://api.search.brave.com (free tier: 2,000 queries/month)")
+            sys.exit(1)
+
     # --- Validate Anthropic key if needed ---
     if "anthropic" in needed_providers:
         api_key = secrets.get("anthropic_api_key", "")
@@ -330,7 +350,14 @@ def main():
         for entry in agents_list:
             if entry["id"] == agent_id:
                 entry["model"] = {"primary": model_str}
-                print(f"  {agent_id:12s} → {model_str}")
+                # Handle per-agent tools deny list
+                agent_tools_cfg = agent_cfg.get("tools", {})
+                deny_list = agent_tools_cfg.get("deny", None)
+                if deny_list is not None:
+                    entry.setdefault("tools", {})["deny"] = deny_list
+                    print(f"  {agent_id:12s} → {model_str}  (deny: {deny_list})")
+                else:
+                    print(f"  {agent_id:12s} → {model_str}")
                 break
 
     # --- Update Slack channel bindings ---
@@ -417,6 +444,43 @@ def main():
                 print(f"  Generated {channels_md_path}")
         else:
             print("  WARNING: OPENCLAW_WORKSPACE not set in openclaw/.env — skipping CHANNELS.md generation")
+
+    # --- Write web tools config ---
+    tools_config = config.get("tools", {})
+    web_config = tools_config.get("web", {})
+
+    if web_config:
+        print("Configuring web tools...")
+        ocjson.setdefault("tools", {}).setdefault("web", {})
+
+        search_cfg = web_config.get("search", {})
+        if search_cfg.get("enabled", False):
+            provider = search_cfg.get("provider", "")
+            if provider == "brave":
+                brave_key = secrets.get("brave_search_api_key", "")
+                ocjson["tools"]["web"]["search"] = {
+                    "enabled": True,
+                    "provider": "brave",
+                    "apiKey": brave_key,
+                }
+                print("  web_search: enabled (provider: brave)")
+            else:
+                print(f"  WARNING: unknown search provider '{provider}' -- skipping")
+        else:
+            web_tools = ocjson.get("tools", {}).get("web", {})
+            if "search" in web_tools:
+                del web_tools["search"]
+            print("  web_search: disabled")
+
+        fetch_cfg = web_config.get("fetch", {})
+        if fetch_cfg.get("enabled", False):
+            ocjson["tools"]["web"]["fetch"] = {"enabled": True}
+            print("  web_fetch: enabled")
+        else:
+            web_tools = ocjson.get("tools", {}).get("web", {})
+            if "fetch" in web_tools:
+                del web_tools["fetch"]
+            print("  web_fetch: disabled")
 
     # --- Write back ---
     if dry_run:

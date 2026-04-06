@@ -45,8 +45,25 @@ agents:
     model: argo/argo:claude-4.6-sonnet
   chattpc26:
     model: argo/argo:claude-4.6-sonnet
+    tools:
+      deny:
+        - web_search
+        - web_fetch
   cecat:
     model: argo/argo:claude-4.6-sonnet
+
+# ── Web search and fetch tools ───────────────────────────────────────────────
+#
+# web_search and web_fetch are enabled for all agents except chattpc26 (which
+# has them in its deny list below). Brave API key goes in secrets.yaml as
+# brave_search_api_key. Free tier: 2,000 queries/month (api.search.brave.com).
+tools:
+  web:
+    search:
+      enabled: true
+      provider: brave
+    fetch:
+      enabled: true
 
 # ── Custom provider definitions ───────────────────────────────────────────────
 #
