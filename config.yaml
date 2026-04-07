@@ -166,6 +166,9 @@ channels:
   - id: C0AQH73GEHM
     name: "#claws"
     agent: luoji
+  - id: C0ARCGZSEUS
+    name: "#openclaw-red-team"
+    agent: luoji
 
 # ── Notify pipeline settings ─────────────────────────────────────────────────
 #
