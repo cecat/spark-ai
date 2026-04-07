@@ -358,6 +358,13 @@ def main():
                     print(f"  {agent_id:12s} → {model_str}  (deny: {deny_list})")
                 else:
                     print(f"  {agent_id:12s} → {model_str}")
+                # Handle per-agent sandbox.browser.enabled
+                sandbox_cfg = agent_cfg.get("sandbox", {})
+                browser_sandbox = sandbox_cfg.get("browser", {})
+                if "enabled" in browser_sandbox:
+                    entry.setdefault("sandbox", {}).setdefault("browser", {})["enabled"] = browser_sandbox["enabled"]
+                    if not browser_sandbox["enabled"]:
+                        print(f"  {agent_id:12s}   sandbox.browser.enabled = false")
                 break
 
     # --- Update Slack channel bindings ---
@@ -481,6 +488,24 @@ def main():
             if "fetch" in web_tools:
                 del web_tools["fetch"]
             print("  web_fetch: disabled")
+
+    # --- Write browser config ---
+    browser_config = config.get("browser", {})
+    if browser_config.get("enabled", False):
+        print("Configuring browser tool...")
+        browser_block = {}
+        browser_block["enabled"] = True
+
+        ssrf_policy = browser_config.get("ssrfPolicy", {})
+        if ssrf_policy:
+            browser_block["ssrfPolicy"] = ssrf_policy
+
+        ocjson["browser"] = browser_block
+        allow_private = ssrf_policy.get("allowPrivateNetwork", True)
+        print(f"  browser: enabled  ssrfPolicy.allowPrivateNetwork = {str(allow_private).lower()}")
+    elif "browser" in browser_config or not browser_config:
+        # browser: block absent from config — leave openclaw.json browser section untouched
+        pass
 
     # --- Write back ---
     if dry_run:

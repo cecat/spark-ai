@@ -49,6 +49,9 @@ agents:
       deny:
         - web_search
         - web_fetch
+    sandbox:
+      browser:
+        enabled: false
   cecat:
     model: argo/argo:claude-4.6-sonnet
 
@@ -64,6 +67,24 @@ tools:
       provider: brave
     fetch:
       enabled: true
+
+
+# ── Browser tool ─────────────────────────────────────────────────────────────
+#
+# Enables the built-in OpenClaw browser for JS-heavy pages and Google Form
+# filling. Uses a persistent profile so tpc26agent@gmail.com stays logged in.
+#
+# Per-agent access: set sandbox.browser.enabled: false in the agent block to
+# prevent an agent from using the browser (see chattpc26 below).
+#
+# After enabling, authenticate tpc26agent@gmail.com by opening the OpenClaw
+# dashboard, triggering a browser session for luoji or cecat, navigating to
+# accounts.google.com, and signing in. OpenClaw persists the session in its
+# internal browser profile automatically.
+browser:
+  enabled: true
+  ssrfPolicy:
+    allowPrivateNetwork: false
 
 # ── Custom provider definitions ───────────────────────────────────────────────
 #
