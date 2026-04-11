@@ -11,7 +11,7 @@ Usage:
 Requirements:
     pip install --break-system-packages pyyaml
 
-Manages four sections of openclaw.json:
+Manages five sections of openclaw.json:
 
   Global defaults (config.yaml defaults:):
     - fallback_model: written to agents.defaults.model.fallbacks — OpenClaw
@@ -54,6 +54,16 @@ Manages four sections of openclaw.json:
       a markdown table of channel name, ID, and agent, readable by all agent sandboxes
       at /shared/CHANNELS.md; this is the single source of truth for channel IDs so
       agents never need hardcoded IDs in PATHS.md
+
+  MCP servers (config.yaml mcp:):
+    - Replaces the entire mcp.servers dict in openclaw.json with the list from
+      config.yaml; stale entries not present in config.yaml are removed
+    - If the mcp: key is absent from config.yaml entirely, the existing
+      openclaw.json mcp block is left untouched (backward compatibility)
+    - Auth tokens are read from secrets.yaml via token_secret key name; the
+      Authorization header value is built from token_format (default: "Bearer {token}";
+      use "Bearer {username}:{token}" for servers that require a username prefix)
+    - Tokens are never written to config.yaml — only the key name appears there
 """
 
 import json
@@ -506,6 +516,60 @@ def main():
     elif "browser" in browser_config or not browser_config:
         # browser: block absent from config — leave openclaw.json browser section untouched
         pass
+
+    # --- Write MCP server config ---
+    # If mcp: is absent from config.yaml entirely, leave openclaw.json untouched.
+    # If mcp: is present, replace mcp.servers completely (config.yaml is authoritative).
+    if "mcp" in config:
+        mcp_servers_cfg = config.get("mcp", {}).get("servers", {})
+        if mcp_servers_cfg:
+            print("Configuring MCP servers...")
+            new_mcp_servers = {}
+            for server_name, server_cfg in mcp_servers_cfg.items():
+                url = server_cfg.get("url", "")
+                if not url:
+                    print(f"  ERROR: MCP server '{server_name}' missing required 'url' field")
+                    sys.exit(1)
+
+                block = {"url": url}
+
+                transport = server_cfg.get("transport", "streamable-http")
+                block["transport"] = transport
+
+                auth_cfg = server_cfg.get("auth", {})
+                if auth_cfg:
+                    token_secret_key = auth_cfg.get("token_secret", "")
+                    if not token_secret_key:
+                        print(f"  ERROR: MCP server '{server_name}' auth block missing 'token_secret'")
+                        sys.exit(1)
+                    token = secrets.get(token_secret_key, "")
+                    if not token or token == "REPLACE_ME":
+                        print(f"  ERROR: MCP server '{server_name}': '{token_secret_key}' not found or not set in secrets.yaml")
+                        sys.exit(1)
+
+                    token_format = auth_cfg.get("token_format", "Bearer {token}")
+                    if "{token}" not in token_format:
+                        print(f"  ERROR: MCP server '{server_name}' token_format must contain '{{token}}' placeholder")
+                        sys.exit(1)
+
+                    username = auth_cfg.get("username", "")
+                    auth_value = token_format.format(token=token, username=username)
+                    block["headers"] = {"Authorization": auth_value}
+
+                    display = token_format.format(token="<redacted>", username=username)
+                    print(f"  {server_name}: {url}  auth: {display}")
+                else:
+                    print(f"  {server_name}: {url}  (no auth)")
+
+                new_mcp_servers[server_name] = block
+
+            ocjson.setdefault("mcp", {})["servers"] = new_mcp_servers
+            print(f"  {len(new_mcp_servers)} MCP server(s) written: {', '.join(new_mcp_servers.keys())}")
+        else:
+            # mcp: present but servers: is empty — clear the block
+            if "mcp" in ocjson:
+                del ocjson["mcp"]
+                print("MCP servers: none configured — cleared mcp block from openclaw.json")
 
     # --- Write back ---
     if dry_run:

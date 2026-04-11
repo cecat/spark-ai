@@ -170,6 +170,31 @@ channels:
     name: "#openclaw-red-team"
     agent: luoji
 
+# ── MCP servers ───────────────────────────────────────────────────────────────
+#
+# Remote MCP servers exposed to agents as tools. apply-config.sh writes these
+# into openclaw.json mcp.servers and is the authoritative source — stale entries
+# not listed here are removed on each run.
+#
+# transport: "streamable-http" (default, recommended) or "sse" (deprecated)
+#
+# Auth options (omit the auth block entirely for unauthenticated servers):
+#   token_secret:  key name in secrets.yaml whose value is the bearer token
+#   token_format:  format string for the Authorization header value
+#                  (default: "Bearer {token}")
+#                  Use "Bearer {username}:{token}" for servers that require a
+#                  username prefix; pair with username: for the plain-text part.
+#   username:      plain-text username embedded in token_format (not a secret)
+
+mcp:
+  servers:
+    sage:
+      url: "https://mcp.sagecontinuum.org/mcp"
+      auth:
+        username: "catlett"
+        token_secret: sage_mcp_token
+        token_format: "Bearer {username}:{token}"
+
 # ── Notify pipeline settings ─────────────────────────────────────────────────
 #
 # Used by run-notify.sh / notify.py for the daily sync and notification pipeline.
