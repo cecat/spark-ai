@@ -2,6 +2,21 @@
 
 All changes to documentation files in this repo.
 
+## 2026-04-11
+- `config.yaml`: added `mcp:` section — declarative MCP server configuration;
+  each entry specifies a url, optional transport (default: `streamable-http`),
+  and an auth block with `token_secret` (key name in secrets.yaml), optional
+  `username`, and `token_format` (default: `"Bearer {token}"`; use
+  `"Bearer {username}:{token}"` for servers requiring a username prefix)
+- `apply-config.sh`: added MCP server handling as the fifth managed section —
+  reads `mcp.servers` from config.yaml, resolves tokens from secrets.yaml,
+  builds the `mcp.servers` block in openclaw.json; config.yaml is authoritative
+  (stale entries removed on each run); if `mcp:` key is absent from config.yaml
+  the existing openclaw.json mcp block is left untouched for backward compat;
+  tokens logged as `<redacted>` in output; docstring updated to reflect five sections
+- Initial MCP server configured: SAGE Continuum (`https://mcp.sagecontinuum.org/mcp`),
+  token stored as `sage_mcp_token` in secrets.yaml
+
 ## 2026-04-05
 
 - `openclaw/docker-compose.yml`: upgraded OpenClaw gateway image from 2026.2.17 →
