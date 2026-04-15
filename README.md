@@ -2,6 +2,8 @@
 
 vLLM serving Qwen3-Coder-Next-FP8 + OpenClaw agent. Model API is Docker-internal only. OpenClaw is Tailscale-only. See `TROUBLESHOOT.md` for fixes, `PLAN.md` for project status, `openclaw/SLACK_README.md` for Slack integration.
 
+This repo is useful in concert with the [Quickstart and Tutorial](https://github.com/cecat/OpenClaw-Tutorial) - you might want to check there first.
+
 ---
 
 ## Architecture
