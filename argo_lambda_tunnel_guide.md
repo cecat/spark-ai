@@ -15,9 +15,8 @@ It is written for a Linux or macOS machine outside the Argonne network that need
 7. [Step 5: Start the background tunnel](#7-step-5-start-the-background-tunnel)
 8. [Step 6: Verify the local tunnel](#8-step-6-verify-the-local-tunnel)
 9. [Step 7: Use the API](#9-step-7-use-the-api)
-10. [Step 8: Keep the tunnel alive (optional)](#10-step-8-keep-the-tunnel-alive-optional)
-11. [Troubleshooting](#11-troubleshooting)
-12. [Quick reference](#12-quick-reference)
+10. [Troubleshooting](#10-troubleshooting)
+11. [Quick reference](#11-quick-reference)
 
 ---
 
@@ -331,55 +330,7 @@ print(response.choices[0].message.content)
 
 ---
 
-## 10. Step 8: Keep the tunnel alive (optional)
-
-If your network blips, the tunnel may die. This helper script checks whether port 44497 is still listening and restarts the tunnel if needed.
-
-Create `~/keep_argo_alive.sh`:
-
-```bash
-#!/bin/bash
-set -euo pipefail
-
-SSH_OPTS="-o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o ConnectTimeout=15"
-
-log() {
-  echo "$(date '+%Y-%m-%d %H:%M:%S') $*"
-}
-
-while true; do
-  if ! lsof -i :44497 2>/dev/null | grep -q LISTEN; then
-    log "Argo tunnel down — restarting"
-    pkill -f "ssh.*argo-tunnel" 2>/dev/null || true
-    sleep 1
-    ssh -f -N $SSH_OPTS argo-tunnel || true
-
-    if lsof -i :44497 2>/dev/null | grep -q LISTEN; then
-      log "Tunnel restored"
-    else
-      log "Failed to restore tunnel"
-    fi
-  fi
-  sleep 30
-done
-```
-
-Make it executable and start it:
-
-```bash
-chmod +x ~/keep_argo_alive.sh
-nohup ~/keep_argo_alive.sh > /tmp/argo_keepalive.log 2>&1 &
-```
-
-To watch the log:
-
-```bash
-tail -f /tmp/argo_keepalive.log
-```
-
----
-
-## 11. Troubleshooting
+## 10. Troubleshooting
 
 ### A. `ssh logins hostname` says `This account is currently not available.`
 
@@ -486,7 +437,6 @@ Try all of the following:
 
 - keep `ServerAliveInterval 60`
 - keep `ServerAliveCountMax 3`
-- use the keep-alive script above
 - if your network is especially aggressive about idle sessions, try lowering `ServerAliveInterval` to `15`
 
 ### H. Best verbose debug commands
@@ -501,7 +451,7 @@ ssh -vvv -N argo-tunnel
 
 ---
 
-## 12. Quick reference
+## 11. Quick reference
 
 ### Start tunnel
 
