@@ -1,5 +1,16 @@
 # Argo Proxy / Lambda5 Tunnel Setup Guide
 
+> **OBSOLETE (kept for historical reference, 2026-05-22).** Lambda5 was taken down and the workflow described below — manual SSH jump tunnels through `lambda5.cels.anl.gov` — is no longer how this system reaches Argo. The current path is:
+>
+> - `argo-shim` (a Python proxy at `~/.local/bin/argo-shim`) listens on `127.0.0.1:44497`
+> - it self-manages its own `ssh -L 127.0.0.1:44496:apps.inside.anl.gov:443` jump through `logins`/`homes` via `ControlPersist`
+> - `socat` bridges `172.18.0.1:44497` (the `nim_net` Docker bridge) to `127.0.0.1:44497` so the OpenClaw gateway and sandbox containers can reach the shim
+> - `start-all.sh` brings up all four components (vLLM, argo-shim, socat, gateway) idempotently
+>
+> Read the rest of this file only if you need historical context on the old setup or are debugging a similar SSH-tunnel scenario from scratch.
+
+---
+
 This is an updated version of the original “Setting Up Argo Proxy Access on a Home Spark” guide, updated to reflect a working setup and a few failure modes that are easy to misinterpret.
 
 It is written for a Linux or macOS machine outside the Argonne network that needs to reach the Argo model gateway on `lambda5.cels.anl.gov` through SSH jump hosts.

@@ -2,6 +2,34 @@
 
 All changes to documentation files in this repo.
 
+## 2026-05-22 — Idempotent start-all.sh, retire Lambda5 references
+
+- `start-all.sh`: rewritten as an idempotent restorer. Safe to run any time.
+  Performs deep end-to-end health checks (POSTs `claudesonnet46` through each
+  layer) on all four components — vLLM, argo-shim, socat bridge, OpenClaw
+  gateway — and restarts only the components that are unhealthy. Auto-starts
+  `argo-shim` if missing (logs to `argo-shim.log`). Implements a cascade rule:
+  if vLLM is restarted, socat and the gateway are also restarted (because
+  `nim_net` and the `172.18.0.1` host interface get recreated). Replaces
+  three previous scripts.
+- Deleted `start-shim.sh`, `start-openclaw.sh`, `start-socat-bridge.sh` —
+  their responsibilities are now folded into the unified `start-all.sh`.
+- `config.yaml`: removed obsolete comment that described the old
+  `ssh -N -L 8443:lambd5:443 <user>@lambda.lcrc.anl.gov` tunnel. Replaced
+  with a description of the current shim/socat path managed by `start-all.sh`.
+- `argo_lambda_tunnel_guide.md`: marked OBSOLETE at the top with a banner
+  pointing to the current shim-based path. Content preserved for historical
+  reference and for anyone debugging a similar SSH-tunnel scenario.
+- `argo-list-models.sh`: rewritten to query the local shim
+  (`http://127.0.0.1:44497/v1/models`) instead of running `curl` over
+  `ssh -J logins,homes catlett@lambda5.cels.anl.gov`. Now a one-line script.
+- `shutdown.sh`: previously untracked, now committed since `CLAUDE.md` in the
+  `spark-ai-agents` repo references it as the canonical shutdown entry point.
+- `.gitignore`: added `archive/`, `socat-bridge.log`, `argo-shim.log`.
+- New `archive/` folder: holds stale snapshots and one-off scratch files
+  (`argo-models*.txt`, `deepseek-r1/`, `qwen3.5/`, `temp.json`,
+  `openclaw/reconstruct-temp.txt`). Gitignored.
+
 ## 2026-04-11
 - `config.yaml`: added `mcp:` section — declarative MCP server configuration;
   each entry specifies a url, optional transport (default: `streamable-http`),
