@@ -2,6 +2,23 @@
 
 All changes to documentation files in this repo.
 
+## 2026-06-11 — Gateway DNS fix and start-all.sh Duo/timeout improvements
+
+- `openclaw/docker-compose.yml`: added explicit `dns:` entries (`10.0.4.1`,
+  `1.1.1.1`) to the `openclaw-gateway` service. Without this, the container
+  inherited the host's `nameserver 127.0.0.53` (systemd-resolved stub), which
+  inside a container points at the container's own loopback — causing all
+  external lookups (e.g. `slack.com`) to fail with `EAI_AGAIN` and the Slack
+  socket-mode provider to never connect. With the explicit DNS list, Docker's
+  internal resolver (`127.0.0.11`) forwards to the listed upstream servers.
+- `start-all.sh`: raised health-check timeouts that were too tight in practice:
+  argo-shim 60s → 90s; gateway 60s → 180s (gateway's Slack socket-mode retry
+  backoff alone can consume most of a 60s budget).
+- `start-all.sh`: added a 20-second quiet window before the argo-shim
+  "warming up" progress line begins, with an on-screen note telling the user
+  to enter their Duo passcode if prompted. Previously the `\r`-redrawn
+  progress line could overwrite the Duo prompt on a cold start.
+
 ## 2026-05-22 — Idempotent start-all.sh, retire Lambda5 references
 
 - `start-all.sh`: rewritten as an idempotent restorer. Safe to run any time.

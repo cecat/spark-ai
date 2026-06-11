@@ -145,14 +145,21 @@ ensure_argo_shim() {
     nohup argo-shim --port "${ARGO_PORT}" --no-auth >> "$ARGO_SHIM_LOG" 2>&1 &
     disown || true
 
-    if wait_for "argo-shim warming up (incl. ssh tunnel)" 60 \
+    # Quiet window: if this is a cold start, ssh will prompt for Duo on the TTY.
+    # The wait_for progress line (uses \r) would overwrite the prompt, so hold
+    # off polling for 20s and tell the user what's happening.
+    echo "    ↳ If prompted by Duo on this terminal, enter your passcode now"
+    echo "      (waiting 20s before health-check progress starts)..."
+    sleep 20
+
+    if wait_for "argo-shim warming up (incl. ssh tunnel)" 90 \
         argo_curl_ok "http://127.0.0.1:${ARGO_PORT}"; then
         echo ""
         info "argo-shim ready"
     else
         echo "Last 20 lines of $ARGO_SHIM_LOG:"
         tail -20 "$ARGO_SHIM_LOG" 2>&1 || true
-        fail "argo-shim did not become healthy within 60s"
+        fail "argo-shim did not become healthy within 90s"
     fi
 }
 
@@ -237,13 +244,13 @@ ensure_gateway() {
             || fail "Failed to start gateway"
     fi
 
-    if wait_for "gateway warming up" 60 gateway_health_ok; then
+    if wait_for "gateway warming up" 180 gateway_health_ok; then
         echo ""
         info "gateway ready"
     else
         echo "Last 20 lines of gateway logs:"
         docker logs openclaw-gateway --tail 20 2>&1
-        fail "gateway did not become healthy within 60s"
+        fail "gateway did not become healthy within 180s"
     fi
 }
 
