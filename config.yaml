@@ -49,15 +49,16 @@ defaults:
 agents:
   luoji:
     model: argo/claudeopus47
-  chattpc26:
-    model: argo/claudesonnet46
-    tools:
-      deny:
-        - web_search
-        - web_fetch
-    sandbox:
-      browser:
-        enabled: false
+  # HIBERNATED 2026-06-01 — restore for TPC27 (see spark-ai-agents/chattpc26/HIBERNATION.md)
+  # chattpc26:
+  #   model: argo/claudesonnet46
+  #   tools:
+  #     deny:
+  #       - web_search
+  #       - web_fetch
+  #   sandbox:
+  #     browser:
+  #       enabled: false
   cecat:
     model: argo/claudesonnet46
 

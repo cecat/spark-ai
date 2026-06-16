@@ -2,6 +2,15 @@
 
 All changes to documentation files in this repo.
 
+## 2026-06-01 — Hibernate chattpc26 agent (TPC26 complete)
+
+`config.yaml`: comment out the chattpc26 agent block. TPC26 conference is
+over; agent hibernated until TPC27 prep begins (~6-8 months). All settings
+preserved as inline comments so the agent can be restored by uncommenting
+the block and re-running `apply-config.sh`. See
+`spark-ai-agents/chattpc26/HIBERNATION.md` for the full shutdown/wake-up
+checklist (single source of truth).
+
 ## 2026-06-11 — Gateway DNS fix and start-all.sh Duo/timeout improvements
 
 - `openclaw/docker-compose.yml`: added explicit `dns:` entries (`10.0.4.1`,
