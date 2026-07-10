@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Ensure ~/.local/bin (argo-shim install location) is on PATH for non-interactive
+# callers (cron, systemd). Login shells already add this via ~/.profile.
+export PATH="$HOME/.local/bin:$PATH"
+
 # Idempotent restorer for the spark-ai stack.
 # Safe to run any time: inspects each component, restarts only what's broken,
 # cascades a vLLM restart to socat + gateway (because vLLM owns the nim_net

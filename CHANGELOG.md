@@ -2,6 +2,59 @@
 
 All changes to documentation files in this repo.
 
+## 2026-07-10 — Gateway recovery + upgrade 4.2 → 6.11; apply-config.sh 6.x schema migrations
+
+**Context:** `check-for-updates.sh` had pulled `ghcr.io/openclaw/openclaw:latest`
+weeks earlier (which by then meant 2026.6.8), and some later restart cycled the
+container onto that image without any of the migration steps documented in
+`UPGRADE-2026.6.8.md`. The gateway went into an infinite crash-loop on the
+4.2-era `openclaw.json`, and cron `stack-health` was posting failure alerts.
+Recovery ended up being the natural moment to also close out to the current
+line-of-latest (2026.6.11) so `apply-config.sh` stops shipping schema drift.
+
+Changes:
+
+- `openclaw/docker-compose.yml`: pinned image to `ghcr.io/openclaw/openclaw:2026.6.11`
+  (was `:latest`). Prevents another unattended auto-upgrade. Bump this tag
+  deliberately per the sequence in `UPGRADE-2026.6.8.md`.
+
+- `apply-config.sh`: migrations for the 5.x/6.x strict schema, so the script
+  stops writing config that the gateway rejects. All are silent — you can
+  keep the legacy key names in `config.yaml` and this script will translate:
+    * `browser.ssrfPolicy.allowPrivateNetwork` → `dangerouslyAllowPrivateNetwork`
+    * `channels.slack.streaming: bool` → `{mode: "off"|"block"}`
+    * `channels.slack.channels.<id>.allow` → `.enabled`
+    * `bindings[]` entries for inactive agents are dropped (6.8 cross-validates
+      `agentId` against `agents.list`). Hibernating an agent no longer requires
+      also stripping its Slack bindings.
+  Also new: preflight check that any non-bundled `tools.web.search.provider`
+  (e.g. `brave`, from 5.12) is installed AND enabled in the gateway before
+  writing config — a missing/disabled provider plugin crash-loops the gateway.
+
+- `apply-config.sh`: `gateway_has_plugin()` helper parses `plugins list --json`
+  correctly (the 6.11 output shape is `{"plugins": [{id, enabled, status, ...}, ...]}`
+  with prefix migration-warning lines that must be sliced past).
+
+- `config.yaml`: `browser.ssrfPolicy` now written with the new key name
+  (`dangerouslyAllowPrivateNetwork`) plus a comment on the migration. The
+  `tools.web.search` block gained a note about the plugin dependency
+  (`clawhub:@openclaw/brave-plugin`, requires runtime ≥6.11).
+
+- Gateway state changes (not in code, but recorded here for the audit trail):
+    * Backups: `/tmp/openclaw-config-pre-6.8-20260710T115727Z.tar.gz` (before
+      the schema patches) and `/tmp/openclaw-config-pre-6.11-20260710T184323Z.tar.gz`
+      (before the 6.11 hop). Move these somewhere durable if you want to keep
+      rollback safety across reboots.
+    * `ghcr.io/openclaw/openclaw:rollback-4.2` tag added to the image `6e1c25ee00f2`
+      still on disk, per `UPGRADE-2026.6.8.md` § Rollback.
+    * Installed plugins: `@openclaw/slack` (2026.6.8), `@openclaw/brave-plugin`
+      (2026.6.11). Both were bundled in 4.2 and became externalized in 5.12.
+
+- `start-all.sh`: `export PATH="$HOME/.local/bin:$PATH"` at the top so cron
+  callers (which do not source ~/.profile) can find `argo-shim`. The
+  `stack-health` cron was silently failing on this even when the stack was
+  otherwise fine.
+
 ## 2026-06-01 — Hibernate chattpc26 agent (TPC26 complete)
 
 `config.yaml`: comment out the chattpc26 agent block. TPC26 conference is

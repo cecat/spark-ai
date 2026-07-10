@@ -17,7 +17,11 @@
 
 services:
   openclaw-gateway:
-    image: ghcr.io/openclaw/openclaw:latest
+    # Pin to explicit version — was ':latest' but that auto-pulled 6.8 on 2026-06-16
+    # without the doctor --fix / plugin-install migration steps, causing the
+    # 2026-07-10 gateway crash-loop. Bump this tag deliberately, following the
+    # sequence in UPGRADE-2026.6.8.md § "Recommended upgrade sequence".
+    image: ghcr.io/openclaw/openclaw:2026.6.11
     container_name: openclaw-gateway
     restart: unless-stopped
     ports:

@@ -70,6 +70,11 @@ agents:
 tools:
   web:
     search:
+      # As of OpenClaw 2026.5.12, brave shipped as a separately-installed plugin
+      # rather than bundled. The plugin currently in use is @openclaw/brave-plugin
+      # (installed via `plugins install clawhub:@openclaw/brave-plugin`) and
+      # requires gateway runtime >=2026.6.11. apply-config.sh preflights the
+      # plugin presence and will exit with instructions if it's missing.
       enabled: true
       provider: brave
     fetch:
@@ -91,7 +96,9 @@ tools:
 browser:
   enabled: true
   ssrfPolicy:
-    allowPrivateNetwork: false
+    # Renamed from `allowPrivateNetwork` in OpenClaw 5.x; apply-config.sh
+    # migrates the legacy name transparently if you use it.
+    dangerouslyAllowPrivateNetwork: false
 
 # ── Custom provider definitions ───────────────────────────────────────────────
 #

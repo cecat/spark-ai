@@ -64,6 +64,23 @@ Manages five sections of openclaw.json:
       Authorization header value is built from token_format (default: "Bearer {token}";
       use "Bearer {username}:{token}" for servers that require a username prefix)
     - Tokens are never written to config.yaml — only the key name appears there
+
+OpenClaw 2026.6.8 schema migrations handled transparently:
+
+  - browser.ssrfPolicy.allowPrivateNetwork -> dangerouslyAllowPrivateNetwork
+    (renamed by 5.x; strict object schema rejects the legacy key)
+  - channels.slack.streaming: bool -> {mode: "off"|"block"}
+    (SlackStreamingConfigSchema became an object)
+  - channels.slack.channels.<id>.allow -> .enabled
+    (per-channel schema rename)
+  - bindings[] entries for hibernated/removed agents are dropped
+    (bindings.agentId is now cross-validated against agents.list)
+  - Preflight: if tools.web.search.provider is a non-bundled provider
+    (e.g. brave, from 2026.5.12), verify the plugin is installed before
+    writing config, since a missing plugin crash-loops the gateway.
+
+If you edit config.yaml with the legacy key names (e.g. allowPrivateNetwork),
+this script migrates them silently on write. Update config.yaml at your leisure.
 """
 
 import json
@@ -141,6 +158,57 @@ def restart_gateway():
         ["docker", "compose", "-f", COMPOSE_FILE, "restart", "openclaw-gateway"],
         check=True,
     )
+
+
+def gateway_has_plugin(plugin_id):
+    """Return True if the running gateway has the named plugin ENABLED.
+
+    Since 2026.5.12, web-search providers other than the bundled defaults
+    (e.g. "brave") ship as separately-installed plugins. Referencing a
+    provider without its plugin installed AND enabled crash-loops the
+    gateway with "web_search provider is not available". Check before
+    writing.
+
+    Returns False if the container is not running (fresh install), which
+    lets the caller give an actionable error message.
+
+    `plugins list --json` on 6.11 returns {"registry":..., "plugins":[...]}
+    with entries containing id/name/state/source fields. Prefix log lines
+    (e.g. [state-migrations]) may precede the JSON, so slice from the first
+    '{'.
+    """
+    try:
+        result = subprocess.run(
+            ["docker", "exec", "openclaw-gateway",
+             "node", "openclaw.mjs", "plugins", "list", "--json"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+    if result.returncode != 0:
+        return False
+    stdout = result.stdout
+    idx = stdout.find("{")
+    if idx < 0:
+        return False
+    try:
+        data = json.loads(stdout[idx:])
+    except (ValueError, json.JSONDecodeError):
+        return False
+    plugins = data.get("plugins") if isinstance(data, dict) else data
+    if not isinstance(plugins, list):
+        return False
+    for entry in plugins:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("id") != plugin_id and entry.get("name") != plugin_id:
+            continue
+        # Require the plugin be enabled AND loaded; a disabled or errored
+        # plugin still crash-loops the gateway on a provider reference.
+        enabled = bool(entry.get("enabled", True))
+        status = str(entry.get("status", "loaded")).lower()
+        return enabled and status == "loaded"
+    return False
 
 
 # Patterns that indicate OpenClaw rejected the config and is crash-looping
@@ -267,6 +335,15 @@ def main():
         if not brave_key or brave_key == "REPLACE_ME":
             print("ERROR: tools.web.search enabled with provider=brave but brave_search_api_key not set in secrets.yaml")
             print("  Sign up at https://api.search.brave.com (free tier: 2,000 queries/month)")
+            sys.exit(1)
+        # 6.8 preflight: brave web-search shipped as a separately-installed
+        # plugin from 5.12 onward. Writing this config without the plugin
+        # crash-loops the gateway with "web_search provider is not available".
+        if not gateway_has_plugin("brave"):
+            print("ERROR: tools.web.search.provider=brave but the 'brave' plugin is not installed in the gateway")
+            print("  Install it, then re-run this script:")
+            print("    docker exec openclaw-gateway node openclaw.mjs plugins install @openclaw/brave")
+            print("  Or disable brave web search: set tools.web.search.enabled: false in config.yaml.")
             sys.exit(1)
 
     # --- Validate Anthropic key if needed ---
@@ -405,6 +482,8 @@ def main():
 
         # Sync the Slack channel allowlist (channels.slack.channels).
         # Both bindings[] and this allowlist must include a channel for it to work.
+        # 6.8 schema note: per-channel field is `enabled` (was `allow` in 4.2);
+        # renamed by the 5.x SlackChannelSchema.strict() migration.
         slack_cfg = ocjson.get("channels", {}).get("slack", {})
         if slack_cfg:
             existing_slack_channels = slack_cfg.get("channels", {})
@@ -414,14 +493,36 @@ def main():
                 if not channel_id:
                     continue
                 # Preserve existing per-channel settings (e.g. requireMention),
-                # defaulting to allow=True, requireMention=True for new entries.
-                existing = existing_slack_channels.get(channel_id, {})
+                # defaulting to enabled=True, requireMention=True for new entries.
+                # Also migrate any legacy `allow` key on existing entries.
+                existing = dict(existing_slack_channels.get(channel_id, {}))
+                if "allow" in existing:
+                    existing["enabled"] = existing.pop("allow")
                 new_slack_channels[channel_id] = existing if existing else {
-                    "allow": True,
+                    "enabled": True,
                     "requireMention": True,
                 }
             slack_cfg["channels"] = new_slack_channels
             print(f"  Slack channel allowlist synced: {', '.join(new_slack_channels.keys())}")
+
+            # 6.8 schema note: channels.slack.streaming must be an object per
+            # SlackStreamingConfigSchema (was a bare boolean in 4.2). Migrate
+            # any legacy boolean value to the new shape without changing intent.
+            streaming = slack_cfg.get("streaming")
+            if isinstance(streaming, bool):
+                slack_cfg["streaming"] = {"mode": "block" if streaming else "off"}
+                print(f"  Migrated channels.slack.streaming: {streaming} -> {slack_cfg['streaming']}")
+
+        # 6.8 schema note: bindings[].agentId is cross-validated against
+        # agents.list. Drop bindings that point at agents not present in the
+        # active list (e.g. hibernated agents commented out in config.yaml)
+        # so the gateway doesn't crash-loop on startup.
+        active_agent_ids = {a["id"] for a in ocjson.get("agents", {}).get("list", [])}
+        pruned = [b for b in ocjson["bindings"] if b.get("agentId") in active_agent_ids]
+        if len(pruned) != len(ocjson["bindings"]):
+            dropped = {b.get("agentId") for b in ocjson["bindings"]} - active_agent_ids
+            print(f"  Dropped bindings for inactive agents: {', '.join(sorted(dropped))}")
+            ocjson["bindings"] = pruned
     else:
         print("No channels section in config.yaml — leaving bindings unchanged")
 
@@ -500,19 +601,25 @@ def main():
             print("  web_fetch: disabled")
 
     # --- Write browser config ---
+    # 6.8 schema note: browser.ssrfPolicy is a .strict() object with keys
+    # `dangerouslyAllowPrivateNetwork` / `allowedHostnames` / `hostnameAllowlist`.
+    # The 4.2-era `allowPrivateNetwork` key is rejected. This block migrates the
+    # legacy name from config.yaml transparently so upgrading the doc is optional.
     browser_config = config.get("browser", {})
     if browser_config.get("enabled", False):
         print("Configuring browser tool...")
-        browser_block = {}
-        browser_block["enabled"] = True
+        browser_block = {"enabled": True}
 
-        ssrf_policy = browser_config.get("ssrfPolicy", {})
+        ssrf_policy = dict(browser_config.get("ssrfPolicy", {}) or {})
+        if "allowPrivateNetwork" in ssrf_policy:
+            ssrf_policy["dangerouslyAllowPrivateNetwork"] = ssrf_policy.pop("allowPrivateNetwork")
+            print("  Migrated ssrfPolicy.allowPrivateNetwork -> dangerouslyAllowPrivateNetwork")
         if ssrf_policy:
             browser_block["ssrfPolicy"] = ssrf_policy
 
         ocjson["browser"] = browser_block
-        allow_private = ssrf_policy.get("allowPrivateNetwork", True)
-        print(f"  browser: enabled  ssrfPolicy.allowPrivateNetwork = {str(allow_private).lower()}")
+        allow_private = ssrf_policy.get("dangerouslyAllowPrivateNetwork", False)
+        print(f"  browser: enabled  ssrfPolicy.dangerouslyAllowPrivateNetwork = {str(allow_private).lower()}")
     elif "browser" in browser_config or not browser_config:
         # browser: block absent from config — leave openclaw.json browser section untouched
         pass
