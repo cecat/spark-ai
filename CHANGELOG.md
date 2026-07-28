@@ -2,6 +2,40 @@
 
 All changes to documentation files in this repo.
 
+## 2026-07-28 — Bind-mount Luoji session logs to a host path (spark-fabric FALDA prep)
+
+**Context:** The `spark-fabric` project (shared memory substrate for the two
+agents) needs to tail Luoji's raw session logs into FALDA. Those logs live in
+the `openclaw_openclaw-config` named volume at
+`agents/luoji/sessions/`, reachable only via `docker exec` — not a host path.
+Surfacing them to the host makes the FALDA tap a plain file reader. See
+`spark-fabric/runlog/RUNLOG-2026-07-28-bringup.md` for the full episode.
+
+Changes:
+
+- `openclaw/docker-compose.yml`: added one bind mount —
+  `/home/catlett/.openclaw-sessions/luoji → /home/node/.openclaw/agents/luoji/sessions:rw`.
+  Host dir is in `$HOME`, deliberately **outside** any repo and **outside** the
+  luoji sandbox's `/workspace` mount (`spark-ai-agents/luoji`), so the agent
+  cannot see or rewrite its own raw session logs. uid alignment is clean
+  (gateway `node` = uid 1000 = `catlett`).
+
+Migration performed (one-time, not in repo):
+
+- Snapshot of the config volume:
+  `~/backups/openclaw/openclaw-config-pre-bindmount-20260728T194143Z.tar.gz`.
+- Compose backup: `openclaw/docker-compose.yml.bak-pre-bindmount-20260728T194500Z`
+  (local only).
+- Copied the 20 existing session items to the host dir before recreating the
+  gateway, so the bind mount didn't shadow Luoji's history.
+
+Verified: mount live and writable, history intact through the mount, sandbox
+isolation holds (luoji sandbox sees `/workspace` but not the sessions dir), and
+a real Slack DM to Luoji was read back from the host path.
+
+**Note:** stayed on pinned `2026.6.11` — did not take the `2026.7.x` major
+during this change (deliberate; keeps the fabric bring-up focused).
+
 ## 2026-07-10 — Gateway recovery + upgrade 4.2 → 6.11; apply-config.sh 6.x schema migrations
 
 **Context:** `check-for-updates.sh` had pulled `ghcr.io/openclaw/openclaw:latest`

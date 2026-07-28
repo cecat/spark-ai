@@ -32,6 +32,13 @@ services:
     volumes:
       # OpenClaw config and memory — internal use only
       - openclaw-config:/home/node/.openclaw
+      # Luoji session logs surfaced to a host path so the spark-fabric FALDA tap
+      # can read them directly (they otherwise live only inside this named
+      # volume). Host dir is OUTSIDE any agent workspace/sandbox mount by design
+      # — the luoji sandbox must not see or write its own raw session logs.
+      # Runtime state, not source: lives in $HOME, not a repo. See
+      # spark-fabric/runlog/RUNLOG-2026-07-28-bringup.md.
+      - /home/catlett/.openclaw-sessions/luoji:/home/node/.openclaw/agents/luoji/sessions:rw
       # Workspace — the ONLY host folder the agent can read/write
       - ${OPENCLAW_WORKSPACE}:/home/node/agents:rw
       # Same-path mount: OpenClaw uses the workspace path from openclaw.json as the

@@ -17,3 +17,4 @@ __pycache__/
 archive/
 socat-bridge.log
 argo-shim.log
+*.bak-*
