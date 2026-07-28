@@ -4,6 +4,18 @@ vLLM serving Qwen3-Coder-Next-FP8 + OpenClaw agent. Model API is Docker-internal
 
 This repo is useful in concert with the [Quickstart and Tutorial](https://github.com/cecat/OpenClaw-Tutorial) - you might want to check there first.
 
+## Related repos
+
+Four repos, split by ownership. The boundary is deliberate: shared substrate
+below, per-agent integration above.
+
+| Repo | What lives there |
+|---|---|
+| **`spark-fabric`** | Shared substrate: FALDA, embedder, distiller, NATS/Sibline, UMP |
+| **`Spark-Hermes`** | **Gandalf** — Hermes agent + gateway in an NVIDIA OpenShell sandbox, his `soul/` and `skills/`, egress policies, ops scripts |
+| **`spark-ai`** *(this one)* | OpenClaw gateway + vLLM. Shared services — connect/read only, never restart |
+| **`spark-ai-agents`** | **Luoji** — OpenClaw agent folders, runbooks, and notes |
+
 ---
 
 ## Architecture
