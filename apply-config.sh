@@ -309,6 +309,18 @@ def main():
             sys.exit(1)
         needed_providers.add(model_str.split("/")[0])
 
+    # --- Validate the global fallback model (same rules as agent models) ---
+    fallback_model_str = defaults_config.get("fallback_model", "").strip()
+    if fallback_model_str:
+        if "/" not in fallback_model_str:
+            print(f"ERROR: defaults.fallback_model must be 'provider/model-id', got: '{fallback_model_str}'")
+            sys.exit(1)
+        fallback_provider = fallback_model_str.split("/")[0]
+        if fallback_provider not in NATIVE_PROVIDERS and fallback_provider not in providers_config:
+            print(f"ERROR: defaults.fallback_model references provider '{fallback_provider}' but it is not defined in config.yaml providers:")
+            sys.exit(1)
+        needed_providers.add(fallback_provider)
+
     # --- Validate custom providers are defined and have API keys ---
     custom_providers_needed = needed_providers - NATIVE_PROVIDERS
     for name in custom_providers_needed:
@@ -436,7 +448,16 @@ def main():
             continue
         for entry in agents_list:
             if entry["id"] == agent_id:
-                entry["model"] = {"primary": model_str}
+                # An agent model block with no "fallbacks" key is an EXPLICIT empty
+                # override in OpenClaw — it does not inherit agents.defaults.model
+                # .fallbacks. So the fallback must be written per-agent here.
+                model_entry = dict(entry.get("model") or {})
+                model_entry["primary"] = model_str
+                if fallback_model and fallback_model != model_str:
+                    model_entry["fallbacks"] = [fallback_model]
+                else:
+                    model_entry.pop("fallbacks", None)
+                entry["model"] = model_entry
                 # Handle per-agent tools deny list
                 agent_tools_cfg = agent_cfg.get("tools", {})
                 deny_list = agent_tools_cfg.get("deny", None)
