@@ -152,7 +152,10 @@ ensure_vllm() {
 #      argo-shim's ssh uses BatchMode=yes and cannot re-auth on its own, and
 #      argo_shim's own SSHAttemptTracker exists because CSPO blocks the source
 #      IP after repeated failed auth. An unattended killer is the last thing
-#      that should be pointed at it.
+#      that should be pointed at it. Since argo-shim 0.3.20 that tracker also
+#      persists to ~/.claude/argo-shim-state.json, so failures accumulate across
+#      restarts into a cooldown and then a hard lock — a restart loop can no
+#      longer wipe the counter by starting a fresh process.
 #
 # That combination produced a month of self-inflicted 3:30am failures
 # (34 in the 7 days to 2026-08-13). So: verify, never start, never kill.
