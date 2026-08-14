@@ -228,20 +228,23 @@ ensure_gateway() {
     echo ""
     echo "=== OpenClaw gateway ==="
 
-    # Cascade: vLLM restart → nim_net recreated → gateway lost its network
+    # Cascade: vLLM restart → nim_net recreated → gateway lost its network.
+    # Must be --force-recreate, not restart: restart reuses the existing network
+    # sandbox, so a container orphaned from nim_net (loopback only, ENETUNREACH
+    # on every outbound call) can never rejoin it and the restart loops forever.
     if $VLLM_RESTARTED; then
-        warn "vLLM was restarted — restarting gateway to rejoin nim_net"
-        docker compose -f "$SPARK_AI_DIR/openclaw/docker-compose.yml" restart \
-            >/dev/null 2>&1 || \
+        warn "vLLM was restarted — recreating gateway to rejoin nim_net"
         docker compose -f "$SPARK_AI_DIR/openclaw/docker-compose.yml" up -d \
+            --force-recreate openclaw-gateway \
             || fail "Failed to (re)start gateway"
     elif docker ps --format '{{.Names}}' | grep -q '^openclaw-gateway$' && gateway_health_ok; then
         info "gateway healthy (container running, can reach Argo via socat)"
         return
     elif docker ps --format '{{.Names}}' | grep -q '^openclaw-gateway$'; then
-        warn "gateway container up but health failed — restarting"
-        docker compose -f "$SPARK_AI_DIR/openclaw/docker-compose.yml" restart \
-            || fail "Failed to restart gateway"
+        warn "gateway container up but health failed — recreating"
+        docker compose -f "$SPARK_AI_DIR/openclaw/docker-compose.yml" up -d \
+            --force-recreate openclaw-gateway \
+            || fail "Failed to recreate gateway"
     else
         warn "Starting gateway..."
         docker compose -f "$SPARK_AI_DIR/openclaw/docker-compose.yml" up -d \
