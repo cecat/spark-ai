@@ -27,10 +27,18 @@ fail()  { echo -e "${RED}[✗]${NC} $*"; }
 # stop_unit <unit> <description>
 # systemd user units, all WantedBy=default.target with linger on, so `stop` is
 # not `disable` — they come back by themselves at next boot.
+#
+# `is-active` alone is not enough: a crash-looping unit sits in
+# ActiveState=activating / SubState=auto-restart, for which is-active exits 3
+# and prints "activating". Treating that as "already stopped" leaves it to be
+# restarted by systemd seconds later, mid-shutdown.
 stop_unit() {
-    local unit=$1 desc=$2
-    if ! systemctl --user is-active "$unit" >/dev/null 2>&1; then
-        info "$unit already stopped"
+    local unit=$1 desc=$2 state
+    # `|| true`: is-active exits non-zero for every state except active, which
+    # under this script's `set -e` would abort the whole shutdown.
+    state=$(systemctl --user is-active "$unit" 2>/dev/null || true)
+    if [ "$state" != "active" ] && [ "$state" != "activating" ] && [ "$state" != "reloading" ]; then
+        info "$unit already stopped (${state:-unknown})"
         return 0
     fi
     warn "Stopping $unit ($desc)..."
@@ -78,7 +86,11 @@ echo "=== Step 3/5: OpenClaw sandbox containers ==="
 
 SBX_CONTAINERS=$(docker ps -q --filter 'label=openclaw.sandbox' 2>/dev/null || true)
 if [ -n "$SBX_CONTAINERS" ]; then
-    SBX_COUNT=$(echo "$SBX_CONTAINERS" | wc -l)
+    # grep -c, not `wc -l`: `echo ""` emits one newline, so wc reports 1 for the
+    # empty case. Harmless under the -n guard above, wrong the moment it moves.
+    # `|| true` because grep -c exits 1 on zero matches, which `set -e` would
+    # treat as fatal.
+    SBX_COUNT=$(printf '%s\n' "$SBX_CONTAINERS" | grep -c . || true)
     warn "Stopping $SBX_COUNT sandbox container(s)..."
     docker stop $SBX_CONTAINERS >/dev/null 2>&1 \
         && docker rm $SBX_CONTAINERS >/dev/null 2>&1 \
@@ -89,20 +101,48 @@ else
 fi
 
 # ── Step 4: vLLM Qwen server ────────────────────────────────────────────
+#
+# `stop`, NOT `down` — deliberately different from step 2, because this compose
+# file OWNS the nim_net network (172.18.0.0/16); OpenClaw's declares it
+# `external: true` and so its `down` never removes it.
+#
+# `down` here would delete the container AND the network. Three systemd units
+# hardcode addresses on it — gandalf-vllm-bridge and -openshell dial
+# 172.18.0.2:8000, gandalf-argo-bridge binds 172.19.0.1 — and vLLM only gets .2
+# back by luck of container start order. `stop` keeps the container and the
+# network, so the next `docker compose up -d` restarts the existing container
+# at the same IP with no model reload.
+#
+# To deliberately reclaim vLLM's ~107 GB (not what a reboot needs), `down` is
+# still the right verb — see spark-ai/README.md "Note on vLLM and memory".
 
 echo ""
 echo "=== Step 4/5: vLLM Qwen server ==="
 
 if docker ps --format '{{.Names}}' | grep -q '^vllm-qwen3-coder-next$'; then
     warn "Stopping vLLM container..."
-    docker compose -f "$SPARK_AI_DIR/qwen3-coder-next/docker-compose.yml" down \
-        && info "vLLM container stopped" \
+    docker compose -f "$SPARK_AI_DIR/qwen3-coder-next/docker-compose.yml" stop \
+        && info "vLLM container stopped (container + nim_net preserved)" \
         || fail "Failed to stop vLLM container"
 else
     info "vLLM container is not running"
 fi
 
 # ── Step 5: Argo SSH tunnel ─────────────────────────────────────────────
+#
+# Deliberately a no-op, kept for the inventory it prints.
+#
+# This checks the `argo-tunnel` host block in ~/.ssh/config (ControlPath
+# ~/.ssh/sockets/%r@%h-%p), which nothing in the startup chain ever starts —
+# `ssh -O check` returns 255 and we take the else branch every run.
+#
+# The tunnel that actually carries Argo belongs to argo-shim, which spawns its
+# own ssh with ControlPath ~/.ssh/argo-shim-%C and manages it internally. We do
+# NOT touch that one: argo-shim's ssh runs BatchMode=yes and cannot re-auth
+# unattended (Duo), and its SSHAttemptTracker persists failures to
+# ~/.claude/argo-shim-state.json, escalating to a cooldown and then a hard lock.
+# Killing it here would cost an interactive Duo prompt to get back — and the
+# reboot ends the process anyway.
 
 echo ""
 echo "=== Step 5/5: Argo SSH tunnel ==="
@@ -113,7 +153,8 @@ if ssh -O check argo-tunnel 2>/dev/null; then
         && info "Argo tunnel closed" \
         || fail "Failed to close Argo tunnel"
 else
-    info "Argo tunnel is not running"
+    info "No standalone argo-tunnel master (expected)"
+    info "argo-shim's own tunnel is left running — the reboot ends it"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────

@@ -508,6 +508,22 @@ cd ~/code/spark-ai/qwen3-coder-next && docker compose down
 
 Restart it again before switching any agent back to `vllm/...`.
 
+`down` (not `stop`) is right here — only removing the container frees the memory.
+But it also deletes the `nim_net` network, and three systemd units hardcode
+addresses on it: `gandalf-vllm-bridge` and `gandalf-vllm-bridge-openshell` dial
+`172.18.0.2:8000`, `gandalf-argo-bridge` binds `172.19.0.1`. When vLLM comes back it
+only reclaims `.2` by luck of container start order, so after a `down`/`up` cycle
+check the IP and restart the bridges:
+
+```bash
+docker inspect vllm-qwen3-coder-next --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
+systemctl --user restart gandalf-vllm-bridge.service gandalf-vllm-bridge-openshell.service
+```
+
+If the IP changed, see `Spark-Hermes/bringup/40-vllm-bridge/README.md` § "What if
+vLLM moves". This is why `~/shutdown.sh` uses `stop` rather than `down`: a reboot
+doesn't need the memory back, and `stop` keeps the container, network and IP intact.
+
 ---
 
 ## Adding a new agent
