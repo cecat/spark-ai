@@ -70,7 +70,13 @@ services:
     # Runs as non-root node user (uid 1000) — do not override with user: root
 
   openclaw-cli:
-    image: ghcr.io/openclaw/openclaw:latest
+    # Pinned to match the gateway above. Was ':latest', which is how the
+    # 2026-06-16 auto-pull happened; a CLI on a different version than the
+    # gateway can also write config the gateway then rejects. Bump both
+    # together. (Day-to-day, prefer `docker exec openclaw-gateway
+    # node dist/index.js <cmd>` — this container cannot reach a
+    # Tailscale-bound gateway over WebSocket.)
+    image: ghcr.io/openclaw/openclaw:2026.6.11
     profiles:
       - cli
     volumes:
