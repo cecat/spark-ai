@@ -46,9 +46,54 @@
 defaults:
   fallback_model: vllm/Qwen/Qwen3-Coder-Next-FP8
 
+# ── Memory search ────────────────────────────────────────────────────────────
+#
+# Controls agents.defaults.memorySearch. Two things have to be true before an
+# agent can recall anything: an embedding provider it can actually reach, and
+# the memory_search / memory_get tools being registered. The tools are only
+# registered when memory search resolves to an enabled configuration, so a
+# broken provider costs you the tools as well as the index.
+#
+# provider:
+#   none    FTS-only. SQLite BM25 keyword search over the same memory files.
+#           No embeddings, no API key, no external calls. This is what we run.
+#   openai  OpenClaw's default if this block is absent. Requires a real
+#           OPENAI_API_KEY. Our docker-compose.yml sets OPENAI_API_KEY=dummy
+#           for the vLLM/NIM path, which 401s here — and an explicitly-remote
+#           provider FAILS CLOSED, so memory_search reports unavailable rather
+#           than degrading to keyword search. That is what left the index at
+#           0/27 files from March to August 2026, silently.
+#   <other> ollama, voyage, gemini, mistral, bedrock, deepinfra,
+#           github-copilot, local, openai-compatible, or any
+#           models.providers.<id> whose api is embedding-capable.
+#
+# Semantic search via Argo embeddings needs an argo-shim change (it must inject
+# `user` into /v1/embeddings request bodies, as it already does for
+# /chat/completions). argo-shim is master-owned and Duo-sensitive; see
+# PLAN-2026-08-15-native-memory-for-sandboxed-agents.md §3.3.
+#
+# Changing provider or model invalidates the index. Rebuild deliberately:
+#   docker exec openclaw-gateway node dist/index.js memory index --force --agent <id>
+#
+# Verify with --deep. Plain `memory status` prints the requested provider and
+# looks healthy even when every embedding call is failing:
+#   docker exec openclaw-gateway node dist/index.js memory status --deep --agent <id>
+
+memory:
+  provider: none
+
+# sandbox.tools.also_allow is ADDITIVE — it extends the default sandbox allow
+# list. Never use `allow` here: that REPLACES the default set and would strip
+# exec/read/write from the agent. group:memory expands to memory_search +
+# memory_get, which the sandbox default list does not name, so sandboxed agents
+# cannot see the memory tools without this.
 agents:
   luoji:
     model: argo/claudeopus47
+    sandbox:
+      tools:
+        also_allow:
+          - group:memory
   # HIBERNATED 2026-06-01 — restore for TPC27 (see spark-ai-agents/chattpc26/HIBERNATION.md)
   # chattpc26:
   #   model: argo/claudesonnet46
@@ -61,6 +106,10 @@ agents:
   #       enabled: false
   cecat:
     model: argo/claudesonnet46
+    sandbox:
+      tools:
+        also_allow:
+          - group:memory
 
 # ── Web search and fetch tools ───────────────────────────────────────────────
 #

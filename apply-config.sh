@@ -11,7 +11,7 @@ Usage:
 Requirements:
     pip install --break-system-packages pyyaml
 
-Manages five sections of openclaw.json:
+Manages eight sections of openclaw.json:
 
   Global defaults (config.yaml defaults:):
     - fallback_model: written to agents.defaults.model.fallbacks — OpenClaw
@@ -41,6 +41,32 @@ Manages five sections of openclaw.json:
     - tools.web.fetch: enabled -- sets tools.web.fetch.enabled in openclaw.json
     - Per-agent tools.deny: written to each agent entry to restrict tool access
       (e.g. chattpc26 has web_search and web_fetch in its deny list)
+    - Per-agent sandbox.tools.also_allow: written to
+      agents.list[].tools.sandbox.tools.alsoAllow. The sandbox default allow
+      list does not name memory_search / memory_get, and a non-empty allow list
+      blocks everything unlisted, so sandboxed agents need
+      also_allow: ["group:memory"] to see the memory tools. This script only
+      ever emits alsoAllow (additive) and never allow (which REPLACES the
+      default set and would strip exec/read/write).
+
+  Memory search (config.yaml memory:):
+    - memory.provider: written to agents.defaults.memorySearch.provider.
+      "none" selects deliberate FTS-only (BM25 keyword) recall with no
+      embedding provider and no API key.
+    - memory.model / memory.fallback: optional, written alongside provider.
+    - Leaving the memory: block out of config.yaml means OpenClaw's own default
+      applies, which is provider "openai". That default FAILS CLOSED: with no
+      valid OPENAI_API_KEY the embedding call 401s, the index stays empty, and
+      memory_search reports unavailable rather than falling back to keyword
+      search. Set memory.provider explicitly.
+    - Changing provider or model changes the index identity. OpenClaw pauses
+      vector search rather than silently re-embedding; rebuild afterwards with
+      `memory index --force --agent <id>`.
+
+  Browser tool (config.yaml browser:):
+    - browser.enabled and browser.ssrfPolicy are written to the openclaw.json
+      browser block; the legacy allowPrivateNetwork key is migrated to
+      dangerouslyAllowPrivateNetwork on write
 
   Slack channel bindings (config.yaml channels:):
     - Replaces the entire bindings[] array in openclaw.json with the list from
@@ -436,6 +462,40 @@ def main():
             del defaults["model"]["fallbacks"]
             print("Cleared global fallback model (not set in config.yaml)")
 
+    # --- Write memory search config ---
+    # OpenClaw's own default is provider "openai", which fails closed: with no
+    # valid key the index never builds and memory_search returns unavailable
+    # instead of falling back to keyword search. Absent a memory: block we leave
+    # openclaw.json alone rather than guessing.
+    memory_config = config.get("memory", {})
+    if memory_config:
+        print("Configuring memory search...")
+        provider = str(memory_config.get("provider", "")).strip()
+        if not provider:
+            print("ERROR: config.yaml memory: block present but memory.provider is empty")
+            print("  Set memory.provider: none for FTS-only keyword recall, or name an")
+            print("  embedding provider (openai, ollama, voyage, a models.providers id, ...).")
+            sys.exit(1)
+        memory_block = dict(defaults.get("memorySearch", {}) or {})
+        memory_block["provider"] = provider
+        for key in ("model", "fallback"):
+            value = memory_config.get(key)
+            if value is not None:
+                memory_block[key] = value
+            elif provider == "none":
+                # A stale model/fallback from a previous provider would be
+                # carried forward and change the index identity for no reason.
+                memory_block.pop(key, None)
+        defaults["memorySearch"] = memory_block
+        if provider == "none":
+            print("  memorySearch.provider: none  (FTS-only keyword recall, no embeddings)")
+        else:
+            print(f"  memorySearch.provider: {provider}"
+                  f"{'  model: ' + str(memory_block['model']) if 'model' in memory_block else ''}")
+        print("  NOTE: if the provider or model changed, rebuild the index:")
+        for agent_id in agents_config:
+            print(f"    docker exec openclaw-gateway node dist/index.js memory index --force --agent {agent_id}")
+
     # --- Update per-agent model assignments ---
     print("Updating agent model assignments...")
     agents_list = ocjson.get("agents", {}).get("list", [])
@@ -473,6 +533,18 @@ def main():
                     entry.setdefault("sandbox", {}).setdefault("browser", {})["enabled"] = browser_sandbox["enabled"]
                     if not browser_sandbox["enabled"]:
                         print(f"  {agent_id:12s}   sandbox.browser.enabled = false")
+                # Handle per-agent sandbox tool allowances.
+                # ALWAYS additive. `allow` replaces the default sandbox tool set,
+                # so writing allow: [group:memory] would strip exec/read/write and
+                # brick the agent. We only ever emit alsoAllow.
+                also_allow = sandbox_cfg.get("tools", {}).get("also_allow", None)
+                if also_allow:
+                    if not isinstance(also_allow, list):
+                        print(f"ERROR: agent '{agent_id}' sandbox.tools.also_allow must be a list")
+                        sys.exit(1)
+                    entry.setdefault("tools", {}).setdefault("sandbox", {}).setdefault(
+                        "tools", {})["alsoAllow"] = also_allow
+                    print(f"  {agent_id:12s}   sandbox.tools.alsoAllow = {also_allow}")
                 break
 
     # --- Update Slack channel bindings ---
