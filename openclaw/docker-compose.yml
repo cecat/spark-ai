@@ -62,9 +62,8 @@ services:
       - NODE_ENV=production
       - OPENAI_API_BASE=http://nim:8000/v1
       - OPENAI_API_KEY=dummy
-    dns:
-      - 10.0.4.1
-      - 1.1.1.1
+    # No dns: override — 10.0.4.1 (LAN gateway) is unreachable from containers,
+    # costing a 4s resolver timeout on every lookup and starving MCP startup.
     networks:
       - nim_net
     # Runs as non-root node user (uid 1000) — do not override with user: root
