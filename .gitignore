@@ -16,5 +16,6 @@ __pycache__/
 # Local clutter and runtime artifacts
 archive/
 socat-bridge.log
+falda-bridge.log
 argo-shim.log
 *.bak-*

@@ -14,6 +14,7 @@ export PATH="$HOME/.local/bin:$PATH"
 #   vLLM (vllm-qwen3-coder-next)  ── creates nim_net + 172.18.0.1
 #   argo-shim (127.0.0.1:44497)   ── self-manages its own ssh tunnel
 #   socat   (172.18.0.1:44497 → 127.0.0.1:44497)
+#   FALDA bridge (172.18.0.1:8077 → 127.0.0.1:8077)  ── shared memory; optional
 #   OpenClaw gateway (port 18789, talks to vLLM via nim_net, Argo via socat)
 #
 # Each ensure_X function does a DEEP health check (end-to-end curl through the
@@ -22,10 +23,12 @@ export PATH="$HOME/.local/bin:$PATH"
 SPARK_AI_DIR="$HOME/code/spark-ai"
 ARGO_SHIM_LOG="$SPARK_AI_DIR/argo-shim.log"
 SOCAT_LOG="$SPARK_AI_DIR/socat-bridge.log"
+FALDA_LOG="$SPARK_AI_DIR/falda-bridge.log"
 BRIDGE_IP="172.18.0.1"
 # Overridable so the argo-down path can be exercised against a dead port
 # without touching the real shim on 44497.
 ARGO_PORT="${ARGO_PORT:-44497}"
+FALDA_PORT="${FALDA_PORT:-8077}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -69,6 +72,21 @@ wait_for() {
 # Probe model/timeout match ~/start-all.sh's argo_healthy and Spark-Hermes.
 # haiku is the cheapest and fastest round-trip; sonnet against an 8s timeout
 # was the most false-positive-prone probe in the stack.
+falda_curl_ok() {
+    local url=$1
+    local code
+    # FALDA is POST + JSON body, never query strings, and a query with no tenant
+    # fails with not_a_member rather than returning empty. Probing /health would
+    # be simpler but only proves socat is listening, not that FALDA answers
+    # through it — /atoms/query exercises the real path the agents use.
+    code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
+        -X POST "${url}/atoms/query" \
+        -H "Content-Type: application/json" \
+        -d '{"tenant":"luoji","limit":1}' \
+        2>/dev/null || echo "000")
+    [ "$code" = "200" ]
+}
+
 argo_curl_ok() {
     local url=$1
     local code
@@ -253,6 +271,70 @@ ensure_socat() {
     fi
 }
 
+# ── 3b. FALDA bridge ────────────────────────────────────────────────────
+
+ensure_falda_bridge() {
+    echo ""
+    echo "=== FALDA bridge (${BRIDGE_IP}:${FALDA_PORT} -> 127.0.0.1:${FALDA_PORT}) ==="
+
+    # Gandalf reaches FALDA over 172.19.0.1 (gandalf-falda-bridge-openshell.service).
+    # The OpenClaw agents sit on nim_net and had no equivalent, so luoji and cecat
+    # could not reach the shared memory fabric at all.
+    #
+    # This is a plain function rather than a systemd unit for the same reason
+    # ensure_socat is: 172.18.0.1 does not exist until vLLM creates nim_net, and
+    # a vLLM restart recreates the interface underneath any socat bound to it.
+    # Gandalf's bridges CAN be units because 172.19.0.1 (openshell-docker) is
+    # stable. Ours is not.
+    #
+    # FALDA binds loopback only and has no auth — loopback is its isolation
+    # boundary. Exposing it on a docker-bridge interface is the same trade
+    # already made for gandalf; it is not off-box.
+
+    if $VLLM_RESTARTED; then
+        if pgrep -f "TCP-LISTEN:${FALDA_PORT},bind=${BRIDGE_IP}" >/dev/null; then
+            warn "vLLM was restarted — killing stale FALDA socat bound to old ${BRIDGE_IP}"
+            pkill -f "TCP-LISTEN:${FALDA_PORT},bind=${BRIDGE_IP}" 2>/dev/null || true
+            sleep 1
+        fi
+    fi
+
+    if ss -tlnp 2>/dev/null | grep -q "${BRIDGE_IP}:${FALDA_PORT} " \
+        && falda_curl_ok "http://${BRIDGE_IP}:${FALDA_PORT}"; then
+        info "FALDA bridge healthy (listening, /atoms/query returns 200)"
+        return
+    fi
+
+    # Nothing downstream of this depends on FALDA, so a failure here warns and
+    # continues rather than aborting the whole startup: an agent with no shared
+    # memory still works, and taking the gateway down over it would be worse.
+    if ! ip -4 addr | grep -q "inet ${BRIDGE_IP}/"; then
+        warn "${BRIDGE_IP} absent — skipping FALDA bridge (is vLLM up?)"
+        return
+    fi
+
+    if ! curl -s -o /dev/null --max-time 5 http://127.0.0.1:${FALDA_PORT}/health; then
+        warn "FALDA not responding on 127.0.0.1:${FALDA_PORT} — skipping bridge"
+        return
+    fi
+
+    pkill -f "TCP-LISTEN:${FALDA_PORT},bind=${BRIDGE_IP}" 2>/dev/null || true
+    warn "Starting FALDA bridge..."
+    nohup socat \
+        "TCP-LISTEN:${FALDA_PORT},bind=${BRIDGE_IP},reuseaddr,fork" \
+        "TCP:127.0.0.1:${FALDA_PORT}" \
+        >> "$FALDA_LOG" 2>&1 &
+    disown || true
+
+    sleep 2
+    if falda_curl_ok "http://${BRIDGE_IP}:${FALDA_PORT}"; then
+        info "FALDA bridge ready"
+    else
+        warn "FALDA bridge did not come up — luoji/cecat stay FALDA-blind"
+        tail -5 "$FALDA_LOG" 2>&1 || true
+    fi
+}
+
 # ── 4. OpenClaw gateway ─────────────────────────────────────────────────
 
 ensure_gateway() {
@@ -308,6 +390,7 @@ ensure_gateway() {
 ensure_vllm
 ensure_argo_shim
 ensure_socat
+ensure_falda_bridge
 ensure_gateway
 
 echo ""
