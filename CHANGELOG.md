@@ -35,11 +35,24 @@ Verified live: `sandbox explain --agent luoji` lists `bundle-mcp`, the `sage__*`
 stripping is gone from the gateway logs, and a real luoji turn calling
 `sage__list_all_nodes` returned 295 nodes.
 
-**Known remaining, same cause:** luoji still loses `web_search`, `web_fetch`,
-`agents_list`, `message`, `tts`, and the three `*_goal` tools to this gate every
-turn. `web_search`/`web_fetch` are `enabled: true` with a live Brave key and
-have been unreachable since 2026-08-16. Left alone pending a deliberate call on
-which of these luoji should actually have.
+**Follow-up, same day:** restored web search for both agents — added `group:web`
+to luoji's and cecat's `also_allow`. `web_search`/`web_fetch` were `enabled: true`
+in the `tools:` block with a live Brave key, but unreachable by either agent
+since 2026-08-16 for exactly this reason. The two settings are independent: the
+`tools:` block controls whether a tool exists, `also_allow` controls whether a
+sandboxed agent may see it, and both must agree. Verified with live turns —
+luoji searched "Argonne National Laboratory" and cecat "Chicago weather", both
+returning real Brave results; Sage re-checked at 295 nodes after the restart.
+
+**Gmail was never affected.** Both agents reach it via `exec`, not MCP: luoji
+through the `gog` binary, cecat through `/scripts/gmail-api.py`. `exec` is in
+the sandbox default allow list, so the tool gate never applied. Verified live
+against both mailboxes.
+
+**Known remaining, same cause:** `agents_list`, `message`, `tts`, and the three
+`*_goal` tools are still stripped from both agents. Left alone deliberately —
+restoring them is a behavioral choice (`message` in particular lets an agent
+send on its own initiative), not a repair.
 
 **Diagnostic note:** `docker logs openclaw-gateway | grep "tool policy removed"`
 names every stripped tool on every turn. Check it first when an agent reports a

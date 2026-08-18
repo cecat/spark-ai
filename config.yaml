@@ -95,6 +95,16 @@ memory:
 # Without it the gateway logs `tool policy removed 33 tool(s) via sandbox
 # tools.allow: sage__*` on every turn. Any agent that should reach an mcp:
 # server needs bundle-mcp here.
+#
+# group:web (web_search + web_fetch) is here for the same reason, even though
+# the tools: block below already enables them globally. That block controls
+# whether the tools EXIST; this list controls whether a sandboxed agent may see
+# them. Both must agree. Enumerate everything an agent needs here — this list is
+# deny-by-omission once non-empty, so adding one entry revokes the rest.
+#
+# Gmail does NOT belong here: both agents reach it via `exec` (luoji through the
+# gog binary, cecat through /scripts/gmail-api.py), and exec is in the sandbox
+# default allow list. The tool gate never touches it.
 agents:
   luoji:
     model: argo/claudeopus47
@@ -102,6 +112,7 @@ agents:
       tools:
         also_allow:
           - group:memory
+          - group:web
           - bundle-mcp
   # HIBERNATED 2026-06-01 — restore for TPC27 (see spark-ai-agents/chattpc26/HIBERNATION.md)
   # chattpc26:
@@ -119,6 +130,7 @@ agents:
       tools:
         also_allow:
           - group:memory
+          - group:web
 
 # ── Web search and fetch tools ───────────────────────────────────────────────
 #
