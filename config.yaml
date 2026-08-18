@@ -87,6 +87,14 @@ memory:
 # exec/read/write from the agent. group:memory expands to memory_search +
 # memory_get, which the sandbox default list does not name, so sandboxed agents
 # cannot see the memory tools without this.
+#
+# bundle-mcp is the same story for the mcp: servers below. The sandbox allow
+# list is a SECOND gate, applied after the MCP server has already connected and
+# handshaked, so a missing entry looks identical to a server that was never
+# configured: the tools simply are not in the agent's tool set, with no error.
+# Without it the gateway logs `tool policy removed 33 tool(s) via sandbox
+# tools.allow: sage__*` on every turn. Any agent that should reach an mcp:
+# server needs bundle-mcp here.
 agents:
   luoji:
     model: argo/claudeopus47
@@ -94,6 +102,7 @@ agents:
       tools:
         also_allow:
           - group:memory
+          - bundle-mcp
   # HIBERNATED 2026-06-01 — restore for TPC27 (see spark-ai-agents/chattpc26/HIBERNATION.md)
   # chattpc26:
   #   model: argo/claudesonnet46

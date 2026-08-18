@@ -2,6 +2,50 @@
 
 All changes to documentation files in this repo.
 
+## 2026-08-18 — Restore Sage MCP access for luoji (regression from the memory fix)
+
+**Symptom:** Luoji could call the Sage Continuum MCP tools in April but not in
+August. From inside the sandbox this is indistinguishable from a server that was
+never configured — the tools are simply absent, with no error the agent can see.
+
+**Cause:** not a Sage problem at all. The gateway connects to
+`mcp.sagecontinuum.org` fine and receives all 33 tools; they were being stripped
+afterwards by the *sandbox* tool policy, logged on every turn as:
+
+```
+[agents/tool-policy] tool policy removed 33 tool(s) via sandbox tools.allow: sage__*
+```
+
+`agents.list[].tools.sandbox.tools.alsoAllow` is a second allow gate applied
+after the MCP handshake, and it is deny-by-omission **only once non-empty**. An
+empty list permits everything; the image's `DEFAULT_TOOL_ALLOW` names 15
+built-ins and has never named MCP or plugin tools. So the 2026-08-16 memory
+repair (`e1af454`), which added `also_allow: [group:memory]`, flipped luoji's
+list from open to closed and silently revoked Sage in the same move. One tool
+restored, another lost, no error either way.
+
+Changes:
+
+- `config.yaml`: added `bundle-mcp` to luoji's `sandbox.tools.also_allow`, plus
+  a comment on the second-gate behavior so the next `also_allow` edit doesn't
+  repeat this. `cecat` deliberately left out — Sage has been luoji-only since
+  2026-04-11, so `doctor` still warns about `agents.list[1]` by design.
+
+Verified live: `sandbox explain --agent luoji` lists `bundle-mcp`, the `sage__*`
+stripping is gone from the gateway logs, and a real luoji turn calling
+`sage__list_all_nodes` returned 295 nodes.
+
+**Known remaining, same cause:** luoji still loses `web_search`, `web_fetch`,
+`agents_list`, `message`, `tts`, and the three `*_goal` tools to this gate every
+turn. `web_search`/`web_fetch` are `enabled: true` with a live Brave key and
+have been unreachable since 2026-08-16. Left alone pending a deliberate call on
+which of these luoji should actually have.
+
+**Diagnostic note:** `docker logs openclaw-gateway | grep "tool policy removed"`
+names every stripped tool on every turn. Check it first when an agent reports a
+missing tool — the evidence exists only on the host, so the agent itself will
+mis-diagnose this.
+
 ## 2026-07-28 — Bind-mount Luoji session logs to a host path (spark-fabric FALDA prep)
 
 **Context:** The `spark-fabric` project (shared memory substrate for the two
