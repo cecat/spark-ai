@@ -107,7 +107,7 @@ memory:
 # default allow list. The tool gate never touches it.
 agents:
   luoji:
-    model: argo/claudeopus47
+    model: argo/claudeopus5
     sandbox:
       tools:
         also_allow:
@@ -125,7 +125,7 @@ agents:
   #     browser:
   #       enabled: false
   cecat:
-    model: argo/claudesonnet46
+    model: argo/claudesonnet5
     sandbox:
       tools:
         also_allow:
@@ -216,27 +216,17 @@ providers:
 #       agent: <agent-id>    # Agent that handles this channel
 #
 # Channels with full links
-# pc-tpc26:         https://trillionparam-5lp9574.slack.com/archives/C09KGGMS116
-# agent-chattpc26:  https://trillionparam-5lp9574.slack.com/archives/C0AJ1EL2KJ5
-# hackathon-cineca: https://trillionparam-5lp9574.slack.com/archives/C0AEFU5GX5Z       
-#
 # agent-cecat:      https://trillionparam-5lp9574.slack.com/archives/C0AMYPF9NDN
 #
 # agent-luoji:      https://trillionparam-5lp9574.slack.com/archives/C0AMBT2GD97
 # claws:            https://trillionparam-5lp9574.slack.com/archives/C0AQH73GEHM
+#
+# formerly chattpc26, now luoji:
+# ps-tpc26:         https://trillionparam-5lp9574.slack.com/archives/C09KGGMS116
+# hackathon-cineca: https://trillionparam-5lp9574.slack.com/archives/C0AEFU5GX5Z
+# agent-chattpc26:  https://trillionparam-5lp9574.slack.com/archives/C0AJ1EL2KJ5
 
 channels:
-
-    # agent chattpc26
-  - id: C09KGGMS116
-    name: "#ps-tpc26"
-    agent: chattpc26
-  - id: C0AEFU5GX5Z
-    name: "#hackathon-cineca"
-    agent: chattpc26
-  - id: C0AJ1EL2KJ5
-    name: "#agent-chattpc26"
-    agent: chattpc26
 
     # agent cecat
   - id: C0AMYPF9NDN
@@ -252,6 +242,20 @@ channels:
     agent: luoji
   - id: C0ARCGZSEUS
     name: "#openclaw-red-team"
+    agent: luoji
+
+    # Inherited from chattpc26, hibernated 2026-06-01 and being retired.
+    # Reassigned to luoji so they stay answered: a channel bound to a retired
+    # agent goes dark, and removing it entirely would fall through to the
+    # default agent instead.
+  - id: C09KGGMS116
+    name: "#ps-tpc26"
+    agent: luoji
+  - id: C0AEFU5GX5Z
+    name: "#hackathon-cineca"
+    agent: luoji
+  - id: C0AJ1EL2KJ5
+    name: "#agent-chattpc26"
     agent: luoji
 
 # ── MCP servers ───────────────────────────────────────────────────────────────
