@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # check_model.sh — Check for a newer Qwen3-Coder-Next-FP8 model without downloading
 #
+# ⚠ VERSION COMPARISON ONLY — carries NO health signal. "Up to date." means the
+#   cached commit hash matches HuggingFace; it says nothing about whether vLLM is
+#   serving the model or answering requests. Never read this as a health check.
+#
 # Default: compares local cache commit hash against HuggingFace remote.
 #          Never downloads model weights (~46GB).
 #

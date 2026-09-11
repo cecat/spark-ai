@@ -244,6 +244,19 @@ channels:
     name: "#openclaw-red-team"
     agent: luoji
 
+    # Inherited from chattpc26, hibernated 2026-06-01 and being retired.
+    # Reassigned to luoji so they stay answered: a channel bound to a retired
+    # agent goes dark, and removing it entirely would fall through to the
+    # default agent instead.
+  - id: C09KGGMS116
+    name: "#ps-tpc26"
+    agent: luoji
+  - id: C0AEFU5GX5Z
+    name: "#hackathon-cineca"
+    agent: luoji
+  - id: C0AJ1EL2KJ5
+    name: "#agent-chattpc26"
+    agent: luoji
 
 # ── MCP servers ───────────────────────────────────────────────────────────────
 #

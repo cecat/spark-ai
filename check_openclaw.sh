@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # check_openclaw.sh — Check for a newer OpenClaw image without pulling
 #
+# ⚠ VERSION COMPARISON ONLY — carries NO health signal. "Up to date." means the
+#   local image digest matches GHCR; it says nothing about whether the gateway is
+#   running, healthy, or even installed. Never read this as a health check.
+#
 # Default: compares local image digest against GHCR registry metadata.
 #          Never downloads image layers.
 #
