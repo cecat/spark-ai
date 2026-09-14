@@ -15,7 +15,7 @@ export PATH="$HOME/.local/bin:$PATH"
 #   argo-shim (127.0.0.1:44497)   ── self-manages its own ssh tunnel
 #   socat   (172.18.0.1:44497 → 127.0.0.1:44497)
 #   FALDA bridge (172.18.0.1:8077 → 127.0.0.1:8077)  ── shared memory; optional
-#   OpenClaw gateway (port 18789, talks to vLLM via nim_net, Argo via socat)
+#   (OpenClaw gateway RETIRED 2026-09-13 — cecat/luoji run in OpenShell sandboxes)
 #
 # Each ensure_X function does a DEEP health check (end-to-end curl through the
 # layer) — not just "is the process listening".
@@ -104,18 +104,6 @@ vllm_health_ok() {
         --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null) || return 1
     [ -n "$ip" ] || return 1
     curl -sf --max-time 5 "http://${ip}:8000/health" >/dev/null
-}
-
-gateway_health_ok() {
-    # Gateway publishes 18789 on the Tailscale IP only. Easiest sanity check:
-    # container is running AND it can reach Argo via socat from inside.
-    docker ps --format '{{.Names}}' | grep -q '^openclaw-gateway$' || return 1
-    docker exec openclaw-gateway curl -sS -o /dev/null -w '%{http_code}' \
-        --max-time 10 "http://${BRIDGE_IP}:${ARGO_PORT}/v1/messages" \
-        -H "Content-Type: application/json" \
-        -X POST \
-        -d '{"model":"claudehaiku45","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}' \
-        2>/dev/null | grep -q '^200$'
 }
 
 # ── 1. vLLM ─────────────────────────────────────────────────────────────
@@ -337,53 +325,18 @@ ensure_falda_bridge() {
 
 # ── 4. OpenClaw gateway ─────────────────────────────────────────────────
 
-ensure_gateway() {
-    echo ""
-    echo "=== OpenClaw gateway ==="
-
-    # Cascade: vLLM restart → nim_net recreated → gateway lost its network.
-    # Must be --force-recreate, not restart: restart reuses the existing network
-    # sandbox, so a container orphaned from nim_net (loopback only, ENETUNREACH
-    # on every outbound call) can never rejoin it and the restart loops forever.
-    if $VLLM_RESTARTED; then
-        warn "vLLM was restarted — recreating gateway to rejoin nim_net"
-        docker compose -f "$SPARK_AI_DIR/openclaw/docker-compose.yml" up -d \
-            --force-recreate openclaw-gateway \
-            || fail "Failed to (re)start gateway"
-    elif docker ps --format '{{.Names}}' | grep -q '^openclaw-gateway$' && gateway_health_ok; then
-        info "gateway healthy (container running, can reach Argo via socat)"
-        return
-    elif docker ps --format '{{.Names}}' | grep -q '^openclaw-gateway$'; then
-        # Re-confirm before destroying: gateway_health_ok curls Argo from inside
-        # the container, so it fails on upstream latency even when the container
-        # is perfectly fine. Recreating on one bad sample throws away a healthy
-        # gateway (and every in-flight agent session with it).
-        warn "gateway health failed — re-confirming for 20s before recreating"
-        if wait_for "re-confirming gateway" 20 gateway_health_ok; then
-            echo ""
-            info "gateway healthy (recovered on re-probe — not recreating)"
-            return
-        fi
-        echo ""
-        warn "gateway confirmed unhealthy — recreating"
-        docker compose -f "$SPARK_AI_DIR/openclaw/docker-compose.yml" up -d \
-            --force-recreate openclaw-gateway \
-            || fail "Failed to recreate gateway"
-    else
-        warn "Starting gateway..."
-        docker compose -f "$SPARK_AI_DIR/openclaw/docker-compose.yml" up -d \
-            || fail "Failed to start gateway"
-    fi
-
-    if wait_for "gateway warming up" 180 gateway_health_ok; then
-        echo ""
-        info "gateway ready"
-    else
-        echo "Last 20 lines of gateway logs:"
-        docker logs openclaw-gateway --tail 20 2>&1
-        fail "gateway did not become healthy within 180s"
-    fi
-}
+# ── 4. OpenClaw gateway — MOTHBALLED 2026-09-13 ─────────────────────────
+#
+# The legacy `openclaw-gateway` container is retired and will not be run again.
+# CeCat and LuoJi run OpenClaw inside their own OpenShell sandboxes
+# (openshell-default--cecat-*, --luoji-*), each with its own Slack app, its own
+# openclaw.json and its own gateway process. Those sandboxes are started by the
+# OpenShell layer, not here.
+#
+# `ensure_gateway()` used to live here and has been deleted, not disabled: on a
+# real run it did `docker compose up -d --force-recreate openclaw-gateway`,
+# which would resurrect the mothballed container. Git history has the old
+# function if the nim_net cascade handling is ever needed again.
 
 # ── Main ────────────────────────────────────────────────────────────────
 
@@ -391,12 +344,11 @@ ensure_vllm
 ensure_argo_shim
 ensure_socat
 ensure_falda_bridge
-ensure_gateway
 
 echo ""
 echo "=== All services healthy ==="
 info "vLLM Qwen server: running (internal port 8000)"
 info "argo-shim:        running (127.0.0.1:${ARGO_PORT})"
 info "socat bridge:     running (${BRIDGE_IP}:${ARGO_PORT} -> 127.0.0.1:${ARGO_PORT})"
-info "OpenClaw gateway: running (port 18789)"
+info "OpenClaw agents:  cecat/luoji run in their own OpenShell sandboxes"
 echo ""

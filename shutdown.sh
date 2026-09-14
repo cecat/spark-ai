@@ -59,11 +59,21 @@ stop_unit() {
 # than leaving them polling a frozen source.
 
 echo ""
-echo "=== Step 1/5: luoji tenant (FALDA + Sibline) ==="
+echo "=== Step 1/5: OpenClaw agent tenants (FALDA + Sibline) ==="
 
 stop_unit falda-tap-luoji.service       "OpenClaw sessions → FALDA"
 stop_unit falda-distiller-luoji.service "T0→T3 synthesis, luoji tenant"
 stop_unit sibline-bridge-luoji.service  "NATS → /workspace mailbox"
+
+# CeCat's equivalents. As of 2026-09-13 none of these units exist — he was
+# never provisioned into FALDA or Sibline (a two-agent-era gap, not a
+# regression: he has 0 FALDA atoms and there is no sibline-cecat stream).
+# They are listed anyway so that the day they ARE created, shutdown covers
+# them automatically instead of silently skipping a third of the box.
+# stop_unit no-ops with a note when a unit is absent, so this is free today.
+stop_unit falda-tap-cecat.service       "OpenClaw sessions → FALDA (cecat)"
+stop_unit falda-distiller-cecat.service "T0→T3 synthesis, cecat tenant"
+stop_unit sibline-bridge-cecat.service  "NATS → /workspace mailbox (cecat)"
 
 # ── Step 2: OpenClaw gateway ────────────────────────────────────────────
 
@@ -84,7 +94,20 @@ fi
 echo ""
 echo "=== Step 3/5: OpenClaw sandbox containers ==="
 
-SBX_CONTAINERS=$(docker ps -q --filter 'label=openclaw.sandbox' 2>/dev/null || true)
+# Two populations, and the label only finds one of them.
+#   label=openclaw.sandbox  → openclaw-sbx-agent-{cecat,luoji}-*  (legacy)
+#   name openshell-default--{cecat,luoji}-*                        (current)
+# The OpenShell sandboxes are where CeCat and LuoJi actually run as of the
+# 2026-09 migration, and they carry no openclaw.sandbox label — so a
+# label-only shutdown left both live agents running while reporting success.
+# Verified 2026-09-13: the label matched 2 legacy containers and 0 current ones.
+SBX_CONTAINERS=$(
+    {
+        docker ps -q --filter 'label=openclaw.sandbox' 2>/dev/null || true
+        docker ps -q --filter 'name=^openshell-default--cecat-' 2>/dev/null || true
+        docker ps -q --filter 'name=^openshell-default--luoji-' 2>/dev/null || true
+    } | sort -u
+)
 if [ -n "$SBX_CONTAINERS" ]; then
     # grep -c, not `wc -l`: `echo ""` emits one newline, so wc reports 1 for the
     # empty case. Harmless under the -n guard above, wrong the moment it moves.
@@ -92,10 +115,28 @@ if [ -n "$SBX_CONTAINERS" ]; then
     # treat as fatal.
     SBX_COUNT=$(printf '%s\n' "$SBX_CONTAINERS" | grep -c . || true)
     warn "Stopping $SBX_COUNT sandbox container(s)..."
+
+    # STOP, NEVER REMOVE the OpenShell sandboxes.
+    #
+    # The legacy openclaw-sbx-* containers were disposable — recreated from a
+    # compose file on every start. The OpenShell sandboxes are NOT. Verified
+    # 2026-09-13: they have 5 bind mounts, all certs/JWT/binaries, and NOTHING
+    # for the agent's own state. /sandbox/.openclaw — workspace, IDENTITY.md,
+    # session transcripts, the hand-injected platforms.* blocks that make
+    # Slack/Telegram inbound work — lives ONLY in the container's writable
+    # layer. `docker rm` destroys all of it, and `nemohermes ... rebuild` will
+    # not bring it back. Spark-Hermes/ops/start-all.sh carries the same warning
+    # for Gandalf's sandbox.
+    #
+    # So: remove the disposable ones, stop the durable ones.
     docker stop $SBX_CONTAINERS >/dev/null 2>&1 \
-        && docker rm $SBX_CONTAINERS >/dev/null 2>&1 \
-        && info "$SBX_COUNT sandbox container(s) stopped and removed" \
         || fail "Failed to stop some sandbox containers"
+
+    REMOVABLE=$(docker ps -aq --filter 'label=openclaw.sandbox' 2>/dev/null || true)
+    if [ -n "$REMOVABLE" ]; then
+        docker rm $REMOVABLE >/dev/null 2>&1 || true
+    fi
+    info "$SBX_COUNT sandbox container(s) stopped (OpenShell sandboxes preserved, not removed)"
 else
     info "No OpenClaw sandbox containers running"
 fi
