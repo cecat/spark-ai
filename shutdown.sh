@@ -15,15 +15,23 @@ set -euo pipefail
 # belongs to the orchestrator, which stops it after BOTH tenants are down.
 
 SPARK_AI_DIR="$HOME/code/spark-ai"
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
 
-info()  { echo -e "${GREEN}[✓]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[…]${NC} $*"; }
+# Shared helpers. Used here: colours, info, warn.
+# Sourced by absolute path.
+source "$HOME/code/spark-ops/ops/lib/_lib.sh"
+
+# NOT shared: this fail() does NOT exit — every call site is
+# `<cmd> || fail "..."` and relies on the script continuing so one stuck
+# component cannot strand the rest of the shutdown. The identically-named
+# helpers in start-all.sh and Spark-Hermes both exit 1, so the library
+# deliberately carries no fail() at all.
 fail()  { echo -e "${RED}[✗]${NC} $*"; }
 
+# NOT shared either: the library's stop_unit has a --check branch and appends
+# to a FAILED array. This script has no --check mode and no such array — it
+# calls the non-exiting fail() above and records nothing. Adopting the library
+# version would change behaviour, so this copy stays.
+#
 # stop_unit <unit> <description>
 # systemd user units, all WantedBy=default.target with linger on, so `stop` is
 # not `disable` — they come back by themselves at next boot.

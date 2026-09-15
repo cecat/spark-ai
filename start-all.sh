@@ -30,13 +30,12 @@ BRIDGE_IP="172.18.0.1"
 ARGO_PORT="${ARGO_PORT:-44497}"
 FALDA_PORT="${FALDA_PORT:-8077}"
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+# Shared helpers. Used here: colours, info, warn, wait_for.
+# Sourced by absolute path.
+source "$HOME/code/spark-ops/ops/lib/_lib.sh"
 
-info()  { echo -e "${GREEN}[✓]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[…]${NC} $*"; }
+# NOT shared: this fail() EXITS 1, while shutdown.sh's same-named copy does not
+# exit at all. Two incompatible contracts, so the library carries neither.
 fail()  { echo -e "${RED}[✗]${NC} $*"; exit 1; }
 
 # Distinct from the generic failure exit 1 so run-stack-health.sh can tell
@@ -49,23 +48,7 @@ VLLM_RESTARTED=false
 
 # ── Helpers ─────────────────────────────────────────────────────────────
 
-wait_for() {
-    # wait_for "<description>" <max_seconds> <command...>
-    # Returns 0 when command succeeds, 1 on timeout.
-    local desc=$1 max=$2
-    shift 2
-    local elapsed=0
-    while [ "$elapsed" -lt "$max" ]; do
-        if "$@" >/dev/null 2>&1; then
-            return 0
-        fi
-        sleep 2
-        elapsed=$((elapsed + 2))
-        printf "\r${YELLOW}[…]${NC} %s — %ds/%ds..." "$desc" "$elapsed" "$max"
-    done
-    echo ""
-    return 1
-}
+# wait_for() comes from spark-ops/ops/lib/_lib.sh.
 
 # Curl Argo via a given host:port. Proves the shim accepts our model name and
 # returns a 200 — catches "process up but rejecting requests" bugs.
